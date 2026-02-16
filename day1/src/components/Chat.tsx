@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, Key } from 'ink';
 import { Conversation } from '../chat/conversation.js';
 import { sendMessage } from '../api/openrouter.js';
 import { Message } from '../types/index.js';
@@ -11,7 +11,7 @@ export const Chat: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useInput(async (inputChar, key) => {
+  useInput(async (inputChar: string, key: Key) => {
     if (isLoading) return;
 
     if (key.return) {
