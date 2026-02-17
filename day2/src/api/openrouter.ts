@@ -1,6 +1,6 @@
 import { Message, OpenRouterRequest, OpenRouterResponse } from '../types/index.js';
 
-export async function sendMessage(messages: Message[]): Promise<string> {
+export async function sendMessage(messages: Message[], systemPrompt?: string): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = process.env.OPENROUTER_MODEL;
 
@@ -12,9 +12,13 @@ export async function sendMessage(messages: Message[]): Promise<string> {
     throw new Error('OPENROUTER_MODEL не найден в переменных окружения');
   }
 
+  const allMessages: Message[] = systemPrompt
+    ? [{ role: 'system', content: systemPrompt }, ...messages]
+    : messages;
+
   const requestBody: OpenRouterRequest = {
     model,
-    messages,
+    messages: allMessages,
   };
 
   try {
