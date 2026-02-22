@@ -98,7 +98,7 @@ export const Chat: React.FC = () => {
         try {
           const systemPrompt = buildSystemPrompt(activeSkills);
           const response = await sendMessage(conversation.getHistory(), systemPrompt, temperature);
-          conversation.addAssistantMessage(response);
+          conversation.addAssistantMessage(response.content);
           setMessages(conversation.getHistory());
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка';

@@ -1,6 +1,6 @@
-import { Message, OpenRouterRequest, OpenRouterResponse } from '../types/index.js';
+import { Message, OpenRouterRequest, OpenRouterResponse, ApiResponse } from '../types/index.js';
 
-export async function sendMessage(messages: Message[], systemPrompt?: string, temperature?: number): Promise<string> {
+export async function sendMessage(messages: Message[], systemPrompt?: string, temperature?: number): Promise<ApiResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = process.env.OPENROUTER_MODEL;
 
@@ -22,6 +22,8 @@ export async function sendMessage(messages: Message[], systemPrompt?: string, te
     ...(temperature !== undefined && { temperature }),
   };
 
+  const startTime = performance.now();
+
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -31,6 +33,8 @@ export async function sendMessage(messages: Message[], systemPrompt?: string, te
       },
       body: JSON.stringify(requestBody),
     });
+
+    const responseTime = (performance.now() - startTime) / 1000;
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -43,7 +47,11 @@ export async function sendMessage(messages: Message[], systemPrompt?: string, te
       throw new Error('Некорректный формат ответа от OpenRouter API');
     }
 
-    return data.choices[0].message.content;
+    return {
+      content: data.choices[0].message.content,
+      usage: data.usage,
+      responseTime,
+    };
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(`Ошибка при обращении к OpenRouter: ${error.message}`);
