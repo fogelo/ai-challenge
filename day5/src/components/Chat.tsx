@@ -304,6 +304,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         <Text dimColor>
           <Text color="yellow">/model</Text> - управление моделями | <Text color="yellow">/model add/remove</Text>
         </Text>
+        <Text dimColor>
+          <Text color="yellow">/clear</Text> - очистить контекст и статистику
+        </Text>
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
