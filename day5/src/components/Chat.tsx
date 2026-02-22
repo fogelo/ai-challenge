@@ -95,6 +95,117 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Model commands
+    if (trimmed === '/model') {
+      const config = configManager.getConfig();
+      const favorites = config.favoriteModels;
+
+      let output = 'Доступные модели:\n';
+      favorites.forEach((modelId, index) => {
+        const model = modelRegistry.getModel(modelId);
+        const name = model ? model.name : modelId;
+        const current = modelId === currentModel ? ' ← текущая' : '';
+        output += `${index + 1}. ${name} (${modelId})${current}\n`;
+      });
+
+      output += '\nКоманды:\n';
+      output += '/model <номер> - переключиться\n';
+      output += '/model add <model-id> - добавить модель\n';
+      output += '/model remove <номер> - удалить модель';
+
+      setNotification(output);
+      return true;
+    }
+
+    if (trimmed.startsWith('/model ') && !trimmed.startsWith('/model add') && !trimmed.startsWith('/model remove')) {
+      const arg = trimmed.slice('/model '.length).trim();
+      const num = parseInt(arg, 10);
+
+      if (isNaN(num)) {
+        setNotification('Используй номер модели, например: /model 3');
+        return true;
+      }
+
+      const config = configManager.getConfig();
+      const favorites = config.favoriteModels;
+
+      if (num < 1 || num > favorites.length) {
+        setNotification(`Номер должен быть от 1 до ${favorites.length}`);
+        return true;
+      }
+
+      const modelId = favorites[num - 1];
+      const model = modelRegistry.getModel(modelId);
+
+      if (!model) {
+        setNotification(`Модель ${modelId} не найдена в OpenRouter`);
+        return true;
+      }
+
+      configManager.setCurrentModel(modelId);
+      setCurrentModel(modelId);
+      setNotification(`Модель переключена на: ${model.name} (${modelId})`);
+      return true;
+    }
+
+    if (trimmed.startsWith('/model add ')) {
+      const modelId = trimmed.slice('/model add '.length).trim();
+
+      if (!modelId) {
+        setNotification('Укажите ID модели, например: /model add anthropic/claude-3-opus');
+        return true;
+      }
+
+      const model = modelRegistry.getModel(modelId);
+
+      if (!model) {
+        setNotification(`Модель ${modelId} не найдена в OpenRouter`);
+        return true;
+      }
+
+      const added = configManager.addFavoriteModel(modelId);
+
+      if (!added) {
+        setNotification(`Модель ${model.name} уже в списке`);
+        return true;
+      }
+
+      setNotification(`Модель ${model.name} (${modelId}) добавлена в список`);
+      return true;
+    }
+
+    if (trimmed.startsWith('/model remove ')) {
+      const arg = trimmed.slice('/model remove '.length).trim();
+      const num = parseInt(arg, 10);
+
+      if (isNaN(num)) {
+        setNotification('Используй номер модели, например: /model remove 2');
+        return true;
+      }
+
+      const config = configManager.getConfig();
+      const favorites = config.favoriteModels;
+
+      if (num < 1 || num > favorites.length) {
+        setNotification(`Номер должен быть от 1 до ${favorites.length}`);
+        return true;
+      }
+
+      const modelId = favorites[num - 1];
+      const model = modelRegistry.getModel(modelId);
+      const modelName = model ? model.name : modelId;
+
+      const removed = configManager.removeFavoriteModel(num - 1);
+
+      if (!removed) {
+        setNotification('Не могу удалить последнюю модель из списка');
+        return true;
+      }
+
+      setNotification(`Модель ${modelName} удалена из списка`);
+      return true;
+    }
+
     return false;
   }
 
@@ -173,6 +284,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         </Text>
         <Text dimColor>
           <Text color="yellow">/temperature [0-2]</Text> - установить temperature
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/model</Text> - управление моделями | <Text color="yellow">/model add/remove</Text>
         </Text>
       </Box>
 
