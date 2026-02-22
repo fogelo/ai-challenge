@@ -1,15 +1,19 @@
 import { Message, OpenRouterRequest, OpenRouterResponse, ApiResponse } from '../types/index.js';
 
-export async function sendMessage(messages: Message[], systemPrompt?: string, temperature?: number): Promise<ApiResponse> {
+export async function sendMessage(
+  messages: Message[],
+  modelId: string,
+  systemPrompt?: string,
+  temperature?: number
+): Promise<ApiResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_MODEL;
 
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY не найден в переменных окружения');
   }
 
-  if (!model) {
-    throw new Error('OPENROUTER_MODEL не найден в переменных окружения');
+  if (!modelId) {
+    throw new Error('Model ID is required');
   }
 
   const allMessages: Message[] = systemPrompt
@@ -17,7 +21,7 @@ export async function sendMessage(messages: Message[], systemPrompt?: string, te
     : messages;
 
   const requestBody: OpenRouterRequest = {
-    model,
+    model: modelId,
     messages: allMessages,
     ...(temperature !== undefined && { temperature }),
   };

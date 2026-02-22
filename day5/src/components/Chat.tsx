@@ -117,7 +117,12 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
         try {
           const systemPrompt = buildSystemPrompt(activeSkills);
-          const apiResponse = await sendMessage(conversation.getHistory(), systemPrompt, temperature);
+          const apiResponse = await sendMessage(
+            conversation.getHistory(),
+            currentModel,
+            systemPrompt,
+            temperature
+          );
 
           // Сохраняем метрики последнего ответа
           setLastResponseMetrics({
@@ -160,7 +165,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           CLI Агент (Ctrl+C для выхода)
         </Text>
         <Text dimColor>
-          Модель: {process.env.OPENROUTER_MODEL || 'не указана'} | Temperature: {temperature}
+          Модель: {currentModel} | Temperature: {temperature}
         </Text>
         <Text dimColor>
           Skills: {activeSkills.length > 0 ? activeSkills.join(', ') : 'нет'}{' '}
