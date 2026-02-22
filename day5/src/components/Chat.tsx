@@ -217,6 +217,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         requestCount: 0,
       });
       setLastResponseMetrics(null);
+      setError(null);
       setNotification('Контекст и статистика очищены. История сообщений сохранена на экране.');
       return true;
     }
