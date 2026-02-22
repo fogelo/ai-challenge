@@ -34,14 +34,13 @@ export async function sendMessage(messages: Message[], systemPrompt?: string, te
       body: JSON.stringify(requestBody),
     });
 
-    const responseTime = (performance.now() - startTime) / 1000;
-
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`OpenRouter API error (${response.status}): ${errorText}`);
     }
 
     const data: OpenRouterResponse = await response.json();
+    const responseTime = (performance.now() - startTime) / 1000;
 
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
       throw new Error('Некорректный формат ответа от OpenRouter API');
