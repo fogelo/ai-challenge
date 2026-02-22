@@ -106,6 +106,7 @@ export const Chat: React.FC = () => {
         const userInput = input.trim();
         setInput('');
         setNotification(null);
+        setLastResponseMetrics(null);
 
         if (handleCommand(userInput)) return;
 
@@ -116,8 +117,26 @@ export const Chat: React.FC = () => {
 
         try {
           const systemPrompt = buildSystemPrompt(activeSkills);
-          const response = await sendMessage(conversation.getHistory(), systemPrompt, temperature);
-          conversation.addAssistantMessage(response.content);
+          const apiResponse = await sendMessage(conversation.getHistory(), systemPrompt, temperature);
+
+          // Сохраняем метрики последнего ответа
+          setLastResponseMetrics({
+            responseTime: apiResponse.responseTime,
+            usage: apiResponse.usage,
+          });
+
+          // Обновляем статистику сессии (если есть usage)
+          if (apiResponse.usage) {
+            setSessionStats(prev => ({
+              totalTokens: prev.totalTokens + apiResponse.usage!.total_tokens,
+              totalPromptTokens: prev.totalPromptTokens + apiResponse.usage!.prompt_tokens,
+              totalCompletionTokens: prev.totalCompletionTokens + apiResponse.usage!.completion_tokens,
+              totalCost: prev.totalCost + calculateCost(apiResponse.usage!),
+              requestCount: prev.requestCount + 1,
+            }));
+          }
+
+          conversation.addAssistantMessage(apiResponse.content);
           setMessages(conversation.getHistory());
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка';
