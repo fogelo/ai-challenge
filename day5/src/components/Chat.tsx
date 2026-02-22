@@ -206,6 +206,21 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Clear command
+    if (trimmed === '/clear') {
+      conversation.clear();
+      setSessionStats({
+        totalTokens: 0,
+        totalPromptTokens: 0,
+        totalCompletionTokens: 0,
+        totalCost: 0,
+        requestCount: 0,
+      });
+      setLastResponseMetrics(null);
+      setNotification('Контекст и статистика очищены. История сообщений сохранена на экране.');
+      return true;
+    }
+
     return false;
   }
 
