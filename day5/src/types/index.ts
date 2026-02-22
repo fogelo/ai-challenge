@@ -58,3 +58,31 @@ export interface SessionStats {
   totalCost: number;
   requestCount: number;
 }
+
+/**
+ * OpenRouter model information from /api/v1/models endpoint
+ */
+export interface ModelInfo {
+  id: string;
+  name: string;
+  pricing: {
+    prompt: string;      // price per token in USD
+    completion: string;  // price per token in USD
+  };
+  context_length?: number;
+}
+
+/**
+ * OpenRouter models API response
+ */
+export interface ModelsApiResponse {
+  data: ModelInfo[];
+}
+
+/**
+ * User's model configuration stored in config.json
+ */
+export interface ModelConfig {
+  currentModel: string;
+  favoriteModels: string[];
+}
