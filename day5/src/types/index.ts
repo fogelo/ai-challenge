@@ -1,3 +1,8 @@
+/**
+ * Type definitions for OpenRouter API interactions and metrics tracking.
+ * @module types
+ */
+
 export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -10,15 +15,21 @@ export interface UsageInfo {
 }
 
 export interface OpenRouterRequest {
+  /**
+   * Model identifier to use for completion
+   */
   model: string;
   messages: Message[];
+  /**
+   * Sampling temperature (0-2). Higher values make output more random.
+   */
   temperature?: number;
 }
 
 export interface OpenRouterResponse {
   choices: Array<{
     message: {
-      role: string;
+      role: 'user' | 'assistant' | 'system';
       content: string;
     };
   }>;
@@ -28,13 +39,22 @@ export interface OpenRouterResponse {
 export interface ApiResponse {
   content: string;
   usage?: UsageInfo;
+  /**
+   * Response time in seconds
+   */
   responseTime: number;
 }
 
+/**
+ * Internal type for tracking session-level aggregated statistics
+ */
 export interface SessionStats {
   totalTokens: number;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  /**
+   * Total cost in USD
+   */
   totalCost: number;
   requestCount: number;
 }
