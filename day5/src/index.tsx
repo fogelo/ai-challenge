@@ -16,12 +16,6 @@ if (!process.env.OPENROUTER_API_KEY) {
   process.exit(1);
 }
 
-if (!process.env.OPENROUTER_MODEL) {
-  console.error('Ошибка: OPENROUTER_MODEL не найден в .env файле');
-  console.error('Создайте .env файл на основе .env.example и укажите модель');
-  process.exit(1);
-}
-
 // Initialize model services
 (async () => {
   console.log('Loading models from OpenRouter...');
