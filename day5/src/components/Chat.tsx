@@ -4,21 +4,20 @@ import { Conversation } from '../chat/conversation.js';
 import { sendMessage } from '../api/openrouter.js';
 import { Message, UsageInfo, SessionStats } from '../types/index.js';
 import { SKILLS, SkillName } from '../skills/index.js';
+import { ModelRegistry } from '../models/registry.js';
+import { ConfigManager } from '../models/config.js';
+
+interface ChatProps {
+  modelRegistry: ModelRegistry;
+  configManager: ConfigManager;
+}
 
 function buildSystemPrompt(activeSkills: SkillName[]): string | undefined {
   if (activeSkills.length === 0) return undefined;
   return activeSkills.map((name) => SKILLS[name]).join('\n\n---\n\n');
 }
 
-function calculateCost(usage: UsageInfo): number {
-  // Примерные цены для Claude 3.5 Sonnet через OpenRouter
-  // $3 per 1M input tokens, $15 per 1M output tokens
-  const inputCost = (usage.prompt_tokens / 1_000_000) * 3;
-  const outputCost = (usage.completion_tokens / 1_000_000) * 15;
-  return inputCost + outputCost;
-}
-
-export const Chat: React.FC = () => {
+export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [conversation] = useState(() => new Conversation());
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -27,6 +26,7 @@ export const Chat: React.FC = () => {
   const [activeSkills, setActiveSkills] = useState<SkillName[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
   const [temperature, setTemperature] = useState<number>(1.0);
+  const [currentModel, setCurrentModel] = useState(configManager.getConfig().currentModel);
   const [sessionStats, setSessionStats] = useState<SessionStats>({
     totalTokens: 0,
     totalPromptTokens: 0,
@@ -132,7 +132,7 @@ export const Chat: React.FC = () => {
               totalTokens: prev.totalTokens + usage.total_tokens,
               totalPromptTokens: prev.totalPromptTokens + usage.prompt_tokens,
               totalCompletionTokens: prev.totalCompletionTokens + usage.completion_tokens,
-              totalCost: prev.totalCost + calculateCost(usage),
+              totalCost: prev.totalCost + modelRegistry.calculateCost(currentModel, usage),
               requestCount: prev.requestCount + 1,
             }));
           }
@@ -199,7 +199,7 @@ export const Chat: React.FC = () => {
               : 'N/A tokens'
             } | 💰{' '}
             {lastResponseMetrics.usage
-              ? `$${calculateCost(lastResponseMetrics.usage).toFixed(6)}`
+              ? `$${modelRegistry.calculateCost(currentModel, lastResponseMetrics.usage).toFixed(6)}`
               : 'N/A'
             }
           </Text>
