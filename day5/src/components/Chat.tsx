@@ -190,6 +190,29 @@ export const Chat: React.FC = () => {
         )}
       </Box>
 
+      {lastResponseMetrics && (
+        <Box flexDirection="column" marginBottom={1}>
+          <Text dimColor>
+            ⏱ {lastResponseMetrics.responseTime.toFixed(2)}s | 📊{' '}
+            {lastResponseMetrics.usage
+              ? `${lastResponseMetrics.usage.total_tokens} tokens (prompt: ${lastResponseMetrics.usage.prompt_tokens}, completion: ${lastResponseMetrics.usage.completion_tokens})`
+              : 'N/A tokens'
+            } | 💰{' '}
+            {lastResponseMetrics.usage
+              ? `$${calculateCost(lastResponseMetrics.usage).toFixed(6)}`
+              : 'N/A'
+            }
+          </Text>
+          <Text dimColor>
+            📈 Session total:{' '}
+            {sessionStats.requestCount > 0 && sessionStats.totalTokens > 0
+              ? `${sessionStats.totalTokens} tokens | $${sessionStats.totalCost.toFixed(6)}`
+              : 'N/A tokens | N/A'
+            }
+          </Text>
+        </Box>
+      )}
+
       {notification && (
         <Box marginBottom={1}>
           <Text color="cyan">{notification}</Text>
