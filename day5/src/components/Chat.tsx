@@ -127,11 +127,12 @@ export const Chat: React.FC = () => {
 
           // Обновляем статистику сессии (если есть usage)
           if (apiResponse.usage) {
+            const usage = apiResponse.usage;
             setSessionStats(prev => ({
-              totalTokens: prev.totalTokens + apiResponse.usage!.total_tokens,
-              totalPromptTokens: prev.totalPromptTokens + apiResponse.usage!.prompt_tokens,
-              totalCompletionTokens: prev.totalCompletionTokens + apiResponse.usage!.completion_tokens,
-              totalCost: prev.totalCost + calculateCost(apiResponse.usage!),
+              totalTokens: prev.totalTokens + usage.total_tokens,
+              totalPromptTokens: prev.totalPromptTokens + usage.prompt_tokens,
+              totalCompletionTokens: prev.totalCompletionTokens + usage.completion_tokens,
+              totalCost: prev.totalCost + calculateCost(usage),
               requestCount: prev.requestCount + 1,
             }));
           }
