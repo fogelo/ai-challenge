@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Box, Text, useInput, Key } from 'ink';
 import { Conversation } from '../chat/conversation.js';
 import { sendMessage } from '../api/openrouter.js';
-import { Message } from '../types/index.js';
+import { Message, UsageInfo, SessionStats } from '../types/index.js';
 import { SKILLS, SkillName } from '../skills/index.js';
 
 function buildSystemPrompt(activeSkills: SkillName[]): string | undefined {
@@ -19,6 +19,17 @@ export const Chat: React.FC = () => {
   const [activeSkills, setActiveSkills] = useState<SkillName[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
   const [temperature, setTemperature] = useState<number>(1.0);
+  const [sessionStats, setSessionStats] = useState<SessionStats>({
+    totalTokens: 0,
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    totalCost: 0,
+    requestCount: 0,
+  });
+  const [lastResponseMetrics, setLastResponseMetrics] = useState<{
+    responseTime: number;
+    usage?: UsageInfo;
+  } | null>(null);
 
   function handleCommand(rawInput: string): boolean {
     const trimmed = rawInput.trim();
