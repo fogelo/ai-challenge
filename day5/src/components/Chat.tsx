@@ -10,6 +10,14 @@ function buildSystemPrompt(activeSkills: SkillName[]): string | undefined {
   return activeSkills.map((name) => SKILLS[name]).join('\n\n---\n\n');
 }
 
+function calculateCost(usage: UsageInfo): number {
+  // Примерные цены для Claude 3.5 Sonnet через OpenRouter
+  // $3 per 1M input tokens, $15 per 1M output tokens
+  const inputCost = (usage.prompt_tokens / 1_000_000) * 3;
+  const outputCost = (usage.completion_tokens / 1_000_000) * 15;
+  return inputCost + outputCost;
+}
+
 export const Chat: React.FC = () => {
   const [conversation] = useState(() => new Conversation());
   const [messages, setMessages] = useState<Message[]>([]);
