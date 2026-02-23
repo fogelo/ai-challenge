@@ -4,4 +4,3 @@ dist/
 *.log
 config.json
 config.json.backup
-*.local*
