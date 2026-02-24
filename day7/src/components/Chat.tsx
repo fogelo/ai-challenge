@@ -224,6 +224,71 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Resume command - list sessions
+    if (trimmed === '/resume') {
+      const sessions = conversation.listSessions();
+
+      if (sessions.length === 0) {
+        setNotification('Нет сохраненных сессий');
+        return true;
+      }
+
+      let output = 'Сохраненные сессии:\n';
+      sessions.forEach((session, index) => {
+        const createdDate = new Date(session.createdAt).toLocaleString('ru-RU');
+        const updatedDate = new Date(session.updatedAt).toLocaleString('ru-RU');
+        output += `${index + 1}. ${session.fileName}\n`;
+        output += `   ID: ${session.id}\n`;
+        output += `   Создана: ${createdDate}\n`;
+        output += `   Обновлена: ${updatedDate}\n`;
+        output += `   Сообщений: ${session.messageCount}\n`;
+      });
+      output += '\nИспользуй /resume <номер> для загрузки';
+
+      setNotification(output);
+      return true;
+    }
+
+    // Resume command - load specific session
+    if (trimmed.startsWith('/resume ')) {
+      const arg = trimmed.slice('/resume '.length).trim();
+      const num = parseInt(arg, 10);
+
+      if (isNaN(num)) {
+        setNotification('Используй номер сессии, например: /resume 1');
+        return true;
+      }
+
+      const sessions = conversation.listSessions();
+
+      if (num < 1 || num > sessions.length) {
+        setNotification(`Номер должен быть от 1 до ${sessions.length}`);
+        return true;
+      }
+
+      const targetSession = sessions[num - 1];
+      const result = conversation.resumeSession(targetSession.id);
+
+      if (!result.success) {
+        setNotification(`Не удалось загрузить сессию ${targetSession.id}`);
+        return true;
+      }
+
+      // Restore session state
+      setMessages(conversation.getHistory());
+
+      if (result.stats) {
+        setSessionStats(result.stats);
+      }
+
+      setNotification(
+        `Сессия загружена: ${targetSession.fileName}\n` +
+        `Сообщений: ${targetSession.messageCount}\n` +
+        `Создана: ${new Date(targetSession.createdAt).toLocaleString('ru-RU')}`
+      );
+      return true;
+    }
+
     return false;
   }
 
@@ -311,6 +376,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         </Text>
         <Text dimColor>
           <Text color="yellow">/clear</Text> - очистить контекст и статистику
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/resume</Text> - восстановить сохраненную сессию
         </Text>
       </Box>
 
