@@ -220,7 +220,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       });
       setLastResponseMetrics(null);
       setError(null);
-      setNotification('Контекст и статистика очищены. История сообщений сохранена на экране.');
+      setNotification('Контекст очищен. Создана новая сессия. Предыдущая сессия сохранена.');
       return true;
     }
 
