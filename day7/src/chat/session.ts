@@ -62,7 +62,10 @@ export class SessionManager {
     try {
       // Find the file for this session ID
       const files = fs.readdirSync(this.historyDir);
-      const sessionFile = files.find(file => file.includes(sessionId));
+      const sessionFile = files.find(file => {
+        const pattern = new RegExp(`session-.*-${sessionId}\\.json$`);
+        return pattern.test(file);
+      });
 
       if (!sessionFile) {
         throw new Error(`Session file not found for ID: ${sessionId}`);
@@ -81,7 +84,10 @@ export class SessionManager {
   loadSession(sessionId: string): SessionData | null {
     try {
       const files = fs.readdirSync(this.historyDir);
-      const sessionFile = files.find(file => file.includes(sessionId));
+      const sessionFile = files.find(file => {
+        const pattern = new RegExp(`session-.*-${sessionId}\\.json$`);
+        return pattern.test(file);
+      });
 
       if (!sessionFile) {
         console.error(`Session file not found for ID: ${sessionId}`);
@@ -142,7 +148,10 @@ export class SessionManager {
   deleteSession(sessionId: string): boolean {
     try {
       const files = fs.readdirSync(this.historyDir);
-      const sessionFile = files.find(file => file.includes(sessionId));
+      const sessionFile = files.find(file => {
+        const pattern = new RegExp(`session-.*-${sessionId}\\.json$`);
+        return pattern.test(file);
+      });
 
       if (!sessionFile) {
         return false;
