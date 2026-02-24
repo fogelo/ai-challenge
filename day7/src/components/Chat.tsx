@@ -325,22 +325,24 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           });
 
           // Обновляем статистику сессии (если есть usage)
+          let newStats = sessionStats;
           if (apiResponse.usage) {
             const usage = apiResponse.usage;
-            setSessionStats(prev => ({
-              totalTokens: prev.totalTokens + usage.total_tokens,
-              totalPromptTokens: prev.totalPromptTokens + usage.prompt_tokens,
-              totalCompletionTokens: prev.totalCompletionTokens + usage.completion_tokens,
-              totalCost: prev.totalCost + modelRegistry.calculateCost(currentModel, usage),
-              requestCount: prev.requestCount + 1,
-            }));
+            newStats = {
+              totalTokens: sessionStats.totalTokens + usage.total_tokens,
+              totalPromptTokens: sessionStats.totalPromptTokens + usage.prompt_tokens,
+              totalCompletionTokens: sessionStats.totalCompletionTokens + usage.completion_tokens,
+              totalCost: sessionStats.totalCost + modelRegistry.calculateCost(currentModel, usage),
+              requestCount: sessionStats.requestCount + 1,
+            };
+            setSessionStats(newStats);
           }
 
           conversation.addAssistantMessage(apiResponse.content);
           setMessages(conversation.getHistory());
 
           // Auto-save session after assistant response
-          conversation.saveSession(sessionStats);
+          conversation.saveSession(newStats);
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка';
           setError(errorMessage);
