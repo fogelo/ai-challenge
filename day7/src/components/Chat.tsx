@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput, Key } from 'ink';
 import { Conversation } from '../chat/conversation.js';
+import { SessionManager } from '../chat/session.js';
 import { sendMessage } from '../api/openrouter.js';
 import { Message, UsageInfo, SessionStats } from '../types/index.js';
 import { SKILLS, SkillName } from '../skills/index.js';
@@ -18,7 +19,8 @@ function buildSystemPrompt(activeSkills: SkillName[]): string | undefined {
 }
 
 export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
-  const [conversation] = useState(() => new Conversation());
+  const [sessionManager] = useState(() => new SessionManager());
+  const [conversation] = useState(() => new Conversation(sessionManager));
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
