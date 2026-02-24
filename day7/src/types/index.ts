@@ -86,3 +86,25 @@ export interface ModelConfig {
   currentModel: string;
   favoriteModels: string[];
 }
+
+/**
+ * Complete session data stored in JSON files
+ */
+export interface SessionData {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: Message[];
+  stats: SessionStats;
+}
+
+/**
+ * Metadata for listing sessions (lighter than full SessionData)
+ */
+export interface SessionMetadata {
+  id: string;
+  fileName: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
