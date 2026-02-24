@@ -273,6 +273,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
           conversation.addAssistantMessage(apiResponse.content);
           setMessages(conversation.getHistory());
+
+          // Auto-save session after assistant response
+          conversation.saveSession(sessionStats);
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка';
           setError(errorMessage);
