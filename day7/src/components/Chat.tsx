@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, Key } from 'ink';
 import { Conversation } from '../chat/conversation.js';
 import { SessionManager } from '../chat/session.js';
@@ -354,6 +354,27 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       setInput((prev) => prev + inputChar);
     }
   });
+
+  // Handle graceful shutdown on Ctrl+C
+  useEffect(() => {
+    const handleExit = () => {
+      try {
+        // Save session before exit
+        conversation.saveSession(sessionStats);
+        console.log('\nСессия сохранена. До встречи!');
+      } catch (error) {
+        console.error('\nОшибка при сохранении:', error);
+      } finally {
+        process.exit(0);
+      }
+    };
+
+    process.on('SIGINT', handleExit);
+
+    return () => {
+      process.off('SIGINT', handleExit);
+    };
+  }, [conversation, sessionStats]);
 
   return (
     <Box flexDirection="column" padding={1}>
