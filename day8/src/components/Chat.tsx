@@ -3,7 +3,7 @@ import { Box, Text, useInput, Key } from 'ink';
 import { Conversation } from '../chat/conversation.js';
 import { SessionManager } from '../chat/session.js';
 import { sendMessage } from '../api/openrouter.js';
-import { Message, UsageInfo, SessionStats } from '../types/index.js';
+import { Message, UsageInfo, SessionStats, MessageMetadata } from '../types/index.js';
 import { SKILLS, SkillName } from '../skills/index.js';
 import { ModelRegistry } from '../models/registry.js';
 import { ConfigManager } from '../models/config.js';
@@ -324,6 +324,17 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             usage: apiResponse.usage,
           });
 
+          // Создаем metadata для сохранения
+          const metadata: MessageMetadata = {
+            usage: apiResponse.usage,
+            responseTime: apiResponse.responseTime,
+            cost: apiResponse.usage
+              ? modelRegistry.calculateCost(currentModel, apiResponse.usage)
+              : undefined,
+            model: currentModel,
+            timestamp: new Date().toISOString(),
+          };
+
           // Обновляем статистику сессии (если есть usage)
           let newStats = sessionStats;
           if (apiResponse.usage) {
@@ -338,7 +349,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             setSessionStats(newStats);
           }
 
-          conversation.addAssistantMessage(apiResponse.content);
+          conversation.addAssistantMessage(apiResponse.content, metadata);
           setMessages(conversation.getHistory());
 
           // Auto-save session after assistant response
