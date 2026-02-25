@@ -289,6 +289,65 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Stats command
+    if (trimmed === '/stats') {
+      const history = conversation.getHistory();
+
+      // Фильтруем только пары user-assistant
+      const requests: Array<{
+        userMsg: Message;
+        assistantMsg: Message;
+        requestNumber: number;
+      }> = [];
+
+      for (let i = 0; i < history.length - 1; i++) {
+        if (history[i].role === 'user' && history[i + 1].role === 'assistant') {
+          requests.push({
+            userMsg: history[i],
+            assistantMsg: history[i + 1],
+            requestNumber: requests.length + 1,
+          });
+        }
+      }
+
+      if (requests.length === 0) {
+        setNotification('Нет запросов для отображения');
+        return true;
+      }
+
+      // Формируем вывод
+      let output = 'История запросов:\n\n';
+
+      requests.forEach(({ userMsg, assistantMsg, requestNumber }) => {
+        const meta = assistantMsg.metadata;
+        const preview = userMsg.content.slice(0, 50) + (userMsg.content.length > 50 ? '...' : '');
+
+        output += `#${requestNumber}. "${preview}"\n`;
+
+        if (meta) {
+          output += `   Токены: ${meta.usage?.total_tokens ?? 'N/A'} `;
+          output += `(prompt: ${meta.usage?.prompt_tokens ?? 'N/A'}, `;
+          output += `completion: ${meta.usage?.completion_tokens ?? 'N/A'})\n`;
+          output += `   Стоимость: ${meta.cost !== undefined ? `$${meta.cost.toFixed(6)}` : 'N/A'}\n`;
+          output += `   Время: ${meta.responseTime?.toFixed(2) ?? 'N/A'}s\n`;
+          output += `   Модель: ${meta.model ?? 'N/A'}\n`;
+        } else {
+          output += '   Метрики недоступны\n';
+        }
+        output += '\n';
+      });
+
+      // Итоговая статистика
+      output += `Всего запросов: ${requests.length}\n`;
+      output += `Всего токенов: ${sessionStats.totalTokens} `;
+      output += `(prompt: ${sessionStats.totalPromptTokens}, `;
+      output += `completion: ${sessionStats.totalCompletionTokens})\n`;
+      output += `Общая стоимость: $${sessionStats.totalCost.toFixed(6)}`;
+
+      setNotification(output);
+      return true;
+    }
+
     return false;
   }
 
