@@ -1,4 +1,4 @@
-import { Message, SessionStats, SessionData } from '../types/index.js';
+import { Message, SessionStats, SessionData, MessageMetadata } from '../types/index.js';
 import { SessionManager } from './session.js';
 
 export class Conversation {
@@ -15,8 +15,12 @@ export class Conversation {
     this.messages.push({ role: 'user', content });
   }
 
-  addAssistantMessage(content: string): void {
-    this.messages.push({ role: 'assistant', content });
+  addAssistantMessage(content: string, metadata?: MessageMetadata): void {
+    this.messages.push({
+      role: 'assistant',
+      content,
+      metadata
+    });
   }
 
   getHistory(): Message[] {
