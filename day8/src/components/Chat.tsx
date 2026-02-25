@@ -509,6 +509,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         <Text dimColor>
           <Text color="yellow">/resume</Text> - восстановить сохраненную сессию
         </Text>
+        <Text dimColor>
+          <Text color="yellow">/stats</Text> - показать историю запросов с метриками
+        </Text>
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
