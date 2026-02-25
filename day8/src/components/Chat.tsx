@@ -553,6 +553,25 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         </Box>
       )}
 
+      {sessionStats.totalPromptTokens > 0 && (() => {
+        const contextWarning = getContextWarning(sessionStats.totalPromptTokens, currentModel, modelRegistry);
+        return (
+          <Box marginBottom={1}>
+            <Text
+              color={
+                contextWarning.level === 'critical'
+                  ? 'red'
+                  : contextWarning.level === 'warning'
+                  ? 'yellow'
+                  : 'gray'
+              }
+            >
+              {contextWarning.message}
+            </Text>
+          </Box>
+        );
+      })()}
+
       {notification && (
         <Box marginBottom={1}>
           <Text color="cyan">{notification}</Text>
