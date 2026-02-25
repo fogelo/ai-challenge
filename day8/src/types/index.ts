@@ -8,6 +8,33 @@ export interface Message {
   content: string;
 }
 
+/**
+ * Per-message metadata for tracking API metrics and costs.
+ * Attached to individual assistant messages for granular monitoring.
+ */
+export interface MessageMetadata {
+  /**
+   * Token usage breakdown (prompt/completion/total)
+   */
+  usage?: UsageInfo;
+  /**
+   * Response time in seconds
+   */
+  responseTime?: number;
+  /**
+   * Cost in USD
+   */
+  cost?: number;
+  /**
+   * Model ID used for this message
+   */
+  model?: string;
+  /**
+   * ISO 8601 timestamp
+   */
+  timestamp?: string;
+}
+
 export interface UsageInfo {
   prompt_tokens: number;
   completion_tokens: number;
