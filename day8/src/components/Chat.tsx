@@ -18,6 +18,42 @@ function buildSystemPrompt(activeSkills: SkillName[]): string | undefined {
   return activeSkills.map((name) => SKILLS[name]).join('\n\n---\n\n');
 }
 
+function getContextWarning(
+  totalPromptTokens: number,
+  modelId: string,
+  modelRegistry: ModelRegistry
+): { level: 'none' | 'warning' | 'critical'; message: string } {
+  const model = modelRegistry.getModel(modelId);
+  const contextLength = model?.context_length;
+
+  if (!contextLength || totalPromptTokens === 0) {
+    return { level: 'none', message: '' };
+  }
+
+  const usagePercent = (totalPromptTokens / contextLength) * 100;
+  const remaining = contextLength - totalPromptTokens;
+  const remainingPercent = ((remaining / contextLength) * 100).toFixed(1);
+
+  if (usagePercent >= 90) {
+    return {
+      level: 'critical',
+      message: `⚠️  КРИТИЧНО: Контекст почти заполнен ${totalPromptTokens}/${contextLength} (${usagePercent.toFixed(1)}%). Осталось ${remainingPercent}%`,
+    };
+  }
+
+  if (usagePercent >= 70) {
+    return {
+      level: 'warning',
+      message: `⚡ Предупреждение: Контекст ${totalPromptTokens}/${contextLength} (${usagePercent.toFixed(1)}%). Осталось ${remainingPercent}%`,
+    };
+  }
+
+  return {
+    level: 'none',
+    message: `Контекст: ${totalPromptTokens}/${contextLength} (${usagePercent.toFixed(1)}%). Осталось ${remainingPercent}%`,
+  };
+}
+
 export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [sessionManager] = useState(() => new SessionManager());
   const [conversation] = useState(() => new Conversation(sessionManager));
