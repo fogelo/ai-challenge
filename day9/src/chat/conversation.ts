@@ -29,6 +29,19 @@ export class Conversation {
     return [...this.messages];
   }
 
+  getMessagesForAPI(keepRecentMessages: number): Message[] {
+    if (this.summary) {
+      // If we have a summary, return summary + recent messages
+      const recent = this.messages.slice(-keepRecentMessages);
+      return [
+        { role: 'system', content: this.summary },
+        ...recent,
+      ];
+    }
+    // No summary, return all messages
+    return [...this.messages];
+  }
+
   getCurrentSessionId(): string {
     return this.currentSessionId;
   }
