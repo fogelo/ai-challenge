@@ -636,7 +636,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           <Text color="yellow">/clear</Text> - очистить контекст и статистику
         </Text>
         <Text dimColor>
-          <Text color="yellow">/compact</Text> - выполнить суммаризацию контекста вручную
+          <Text color="yellow">/compact</Text> - выполнить суммаризацию контекста
         </Text>
         <Text dimColor>
           <Text color="yellow">/resume</Text> - восстановить сохраненную сессию
