@@ -5,6 +5,8 @@ export class Conversation {
   private messages: Message[] = [];
   private sessionManager: SessionManager;
   private currentSessionId: string;
+  private summary: string | null = null;
+  private needsSummarizationFlag: boolean = false;
 
   constructor(sessionManager: SessionManager) {
     this.sessionManager = sessionManager;
@@ -58,11 +60,29 @@ export class Conversation {
 
   clear(): void {
     this.messages = [];
+    this.summary = null;
+    this.needsSummarizationFlag = false;
     // Create new session after clear
     this.currentSessionId = this.sessionManager.createSession();
   }
 
   listSessions() {
     return this.sessionManager.listSessions();
+  }
+
+  setSummary(summary: string): void {
+    this.summary = summary;
+  }
+
+  getSummary(): string | null {
+    return this.summary;
+  }
+
+  setNeedsSummarization(value: boolean): void {
+    this.needsSummarizationFlag = value;
+  }
+
+  needsSummarization(): boolean {
+    return this.needsSummarizationFlag;
   }
 }
