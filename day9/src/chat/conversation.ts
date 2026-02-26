@@ -52,6 +52,8 @@ export class Conversation {
       createdAt: new Date().toISOString(), // Will be overwritten by actual createdAt on load
       updatedAt: new Date().toISOString(),
       messages: this.messages,
+      summary: this.summary ?? undefined,
+      needsSummarization: this.needsSummarizationFlag,
       stats: stats,
     };
 
@@ -67,6 +69,8 @@ export class Conversation {
 
     this.messages = data.messages;
     this.currentSessionId = sessionId;
+    this.summary = data.summary ?? null;
+    this.needsSummarizationFlag = data.needsSummarization ?? false;
 
     return { success: true, stats: data.stats };
   }
