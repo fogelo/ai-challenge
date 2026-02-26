@@ -108,11 +108,27 @@ export interface ModelsApiResponse {
 }
 
 /**
+ * Configuration for context summarization
+ */
+export interface SummarizationConfig {
+  /**
+   * Threshold percentage (0.0 to 1.0) for triggering summarization
+   * Example: 0.7 = 70% context usage
+   */
+  threshold: number;
+  /**
+   * Number of recent messages to keep as-is (not summarized)
+   */
+  keepRecentMessages: number;
+}
+
+/**
  * User's model configuration stored in config.json
  */
 export interface ModelConfig {
   currentModel: string;
   favoriteModels: string[];
+  summarization: SummarizationConfig;
 }
 
 /**
@@ -123,6 +139,8 @@ export interface SessionData {
   createdAt: string;
   updatedAt: string;
   messages: Message[];
+  summary?: string;
+  needsSummarization?: boolean;
   stats: SessionStats;
 }
 

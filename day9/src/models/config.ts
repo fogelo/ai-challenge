@@ -1,4 +1,4 @@
-import { ModelConfig } from '../types/index.js';
+import { ModelConfig, SummarizationConfig } from '../types/index.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -14,6 +14,10 @@ const DEFAULT_CONFIG: ModelConfig = {
     'anthropic/claude-3.5-sonnet',
     'openai/gpt-4o',
   ],
+  summarization: {
+    threshold: 0.7,
+    keepRecentMessages: 10,
+  },
 };
 
 export class ConfigManager {
@@ -36,6 +40,18 @@ export class ConfigManager {
       // Validate structure
       if (!parsed.currentModel || !Array.isArray(parsed.favoriteModels)) {
         throw new Error('Invalid config structure');
+      }
+
+      // Add summarization defaults if missing or invalid
+      if (!parsed.summarization ||
+          typeof parsed.summarization.threshold !== 'number' ||
+          typeof parsed.summarization.keepRecentMessages !== 'number' ||
+          !Number.isFinite(parsed.summarization.threshold) ||
+          parsed.summarization.threshold < 0 ||
+          parsed.summarization.threshold > 1 ||
+          parsed.summarization.keepRecentMessages <= 0 ||
+          !Number.isInteger(parsed.summarization.keepRecentMessages)) {
+        parsed.summarization = DEFAULT_CONFIG.summarization;
       }
 
       return parsed;
@@ -63,6 +79,20 @@ export class ConfigManager {
 
   getConfig(): ModelConfig {
     return this.config;
+  }
+
+  getSummarizationConfig(): SummarizationConfig {
+    // Validate on access as well
+    const config = this.config.summarization;
+    if (!Number.isFinite(config.threshold) ||
+        config.threshold < 0 ||
+        config.threshold > 1) {
+      throw new Error(`Invalid threshold: ${config.threshold}. Must be between 0.0 and 1.0`);
+    }
+    if (!Number.isInteger(config.keepRecentMessages) || config.keepRecentMessages <= 0) {
+      throw new Error(`Invalid keepRecentMessages: ${config.keepRecentMessages}. Must be a positive integer`);
+    }
+    return config;
   }
 
   setCurrentModel(modelId: string): void {
