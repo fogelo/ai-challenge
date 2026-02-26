@@ -7,6 +7,7 @@ import { Message, UsageInfo, SessionStats, MessageMetadata } from '../types/inde
 import { SKILLS, SkillName } from '../skills/index.js';
 import { ModelRegistry } from '../models/registry.js';
 import { ConfigManager } from '../models/config.js';
+import { calculateApproximateTokens } from '../utils/tokens.js';
 
 interface ChatProps {
   modelRegistry: ModelRegistry;
@@ -54,6 +55,37 @@ function getContextWarning(
   };
 }
 
+function checkContextThreshold(
+  conversation: Conversation,
+  currentModel: string,
+  modelRegistry: ModelRegistry,
+  threshold: number
+): boolean {
+  const messages = conversation.getHistory();
+  const totalTokens = calculateApproximateTokens(messages);
+  const model = modelRegistry.getModel(currentModel);
+  const contextLength = model?.context_length;
+
+  if (!contextLength || totalTokens === 0) {
+    return false;
+  }
+
+  const percentage = totalTokens / contextLength;
+  return percentage > threshold;
+}
+
+function calculateTokenSavings(
+  originalMessages: Message[],
+  summaryMessage: Message,
+  recentMessages: Message[]
+): { original: number; compressed: number; savings: number } {
+  const original = calculateApproximateTokens(originalMessages);
+  const compressed = calculateApproximateTokens([summaryMessage, ...recentMessages]);
+  const savings = Math.round(((original - compressed) / original) * 100);
+
+  return { original, compressed, savings };
+}
+
 export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [sessionManager] = useState(() => new SessionManager());
   const [conversation] = useState(() => new Conversation(sessionManager));
@@ -76,6 +108,65 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     responseTime: number;
     usage?: UsageInfo;
   } | null>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+
+  async function performSummarization(forced: boolean = false): Promise<void> {
+    const config = configManager.getSummarizationConfig();
+    const messages = conversation.getHistory();
+
+    // Check if summarization is needed
+    if (messages.length <= config.keepRecentMessages) {
+      if (forced) {
+        setNotification('ℹ️  Суммаризация не требуется (недостаточно сообщений)');
+      }
+      return;
+    }
+
+    setIsSummarizing(true);
+    setNotification('⚡ Выполняется суммаризация контекста...');
+
+    try {
+      // Messages to summarize (all except recent)
+      const toSummarize = messages.slice(0, -config.keepRecentMessages);
+      const recentMessages = messages.slice(-config.keepRecentMessages);
+
+      // Build summarization prompt
+      const summaryPrompt = `Создай краткое резюме следующего диалога, сохраняя ключевые темы, решения и важный контекст. Формат: 2-3 абзаца на русском языке.`;
+
+      const summaryMessages: Message[] = [
+        { role: 'system', content: summaryPrompt },
+        ...toSummarize,
+      ];
+
+      // Get summary from API
+      const response = await sendMessage(summaryMessages, currentModel, undefined, temperature);
+
+      // Update conversation state
+      conversation.setSummary(response.content);
+      conversation.setNeedsSummarization(false);
+
+      // Calculate savings
+      const savings = calculateTokenSavings(messages, { role: 'system', content: response.content }, recentMessages);
+
+      // Show success notification
+      if (forced) {
+        setNotification(
+          `✓ Готово! Сжато ${toSummarize.length} сообщений, сохранены последние ${config.keepRecentMessages}\n` +
+          `💾 Токены: ${savings.original} → ~${savings.compressed} (экономия ${savings.savings}%)`
+        );
+      } else {
+        setNotification(
+          `✓ Контекст сжат: ${toSummarize.length} сообщений → summary + ${config.keepRecentMessages} последних`
+        );
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setNotification(`❌ Ошибка суммаризации: ${errorMsg}`);
+      setError(`Summarization error: ${errorMsg}`);
+    } finally {
+      setIsSummarizing(false);
+    }
+  }
 
   function handleCommand(rawInput: string): boolean {
     const trimmed = rawInput.trim();
@@ -260,6 +351,30 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Compact command
+    if (trimmed === '/compact') {
+      if (isLoading || isSummarizing) {
+        setNotification('⏳ Дождитесь завершения текущей операции');
+        return true;
+      }
+
+      const config = configManager.getSummarizationConfig();
+      const messages = conversation.getHistory();
+
+      if (messages.length <= config.keepRecentMessages) {
+        const model = modelRegistry.getModel(currentModel);
+        const contextLength = model?.context_length || 0;
+        const totalTokens = calculateApproximateTokens(messages);
+        const percentage = contextLength > 0 ? ((totalTokens / contextLength) * 100).toFixed(1) : '0.0';
+
+        setNotification(`ℹ️  Суммаризация не требуется (контекст: ${percentage}%)`);
+        return true;
+      }
+
+      performSummarization(true);
+      return true;
+    }
+
     // Resume command - list sessions
     if (trimmed === '/resume') {
       const sessions = conversation.listSessions();
@@ -405,9 +520,17 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         setIsLoading(true);
 
         try {
+          // Check if summarization is needed before processing
+          if (conversation.needsSummarization()) {
+            await performSummarization(false);
+          }
+
           const systemPrompt = buildSystemPrompt(activeSkills);
+          const config = configManager.getSummarizationConfig();
+          const apiMessages = conversation.getMessagesForAPI(config.keepRecentMessages);
+
           const apiResponse = await sendMessage(
-            conversation.getHistory(),
+            apiMessages,
             currentModel,
             systemPrompt,
             temperature
@@ -446,6 +569,12 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
           conversation.addAssistantMessage(apiResponse.content, metadata);
           setMessages(conversation.getHistory());
+
+          // Check if summarization will be needed for next request
+          const summaryConfig = configManager.getSummarizationConfig();
+          if (checkContextThreshold(conversation, currentModel, modelRegistry, summaryConfig.threshold)) {
+            conversation.setNeedsSummarization(true);
+          }
 
           // Auto-save session after assistant response
           conversation.saveSession(newStats);
@@ -507,6 +636,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           <Text color="yellow">/clear</Text> - очистить контекст и статистику
         </Text>
         <Text dimColor>
+          <Text color="yellow">/compact</Text> - выполнить суммаризацию контекста вручную
+        </Text>
+        <Text dimColor>
           <Text color="yellow">/resume</Text> - восстановить сохраненную сессию
         </Text>
         <Text dimColor>
@@ -558,6 +690,8 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
       {sessionStats.totalPromptTokens > 0 && (() => {
         const contextWarning = getContextWarning(sessionStats.totalPromptTokens, currentModel, modelRegistry);
+        const hasSummary = conversation.getSummary() !== null;
+        const summaryIndicator = hasSummary ? ' [S]' : '';
         return (
           <Box marginBottom={1}>
             <Text
@@ -569,7 +703,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
                   : 'gray'
               }
             >
-              {contextWarning.message}
+              {contextWarning.message}{summaryIndicator}
             </Text>
           </Box>
         );
