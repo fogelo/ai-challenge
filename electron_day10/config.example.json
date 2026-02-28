@@ -1,0 +1,8 @@
+{
+  "openrouter": {
+    "apiKey": "sk-or-v1-YOUR-API-KEY-HERE",
+    "model": "anthropic/claude-3.5-sonnet",
+    "temperature": 0.7,
+    "maxTokens": 4096
+  }
+}
