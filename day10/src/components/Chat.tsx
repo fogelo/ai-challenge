@@ -797,6 +797,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         <Text dimColor>
           <Text color="yellow">/stats</Text> - показать историю запросов с метриками
         </Text>
+        <Text dimColor>
+          <Text color="yellow">/strategy</Text> - управление стратегиями контекста | <Text color="yellow">/strategy [1-3]</Text>
+        </Text>
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
