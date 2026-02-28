@@ -123,12 +123,35 @@ export interface SummarizationConfig {
 }
 
 /**
+ * Strategy types for context management
+ */
+export type StrategyType = 'sliding' | 'facts' | 'branching';
+
+/**
+ * Strategy configuration in config.json
+ */
+export interface StrategyConfig {
+  default: StrategyType;
+  slidingWindow: {
+    size: number;
+  };
+  stickyFacts: {
+    windowSize: number;
+    extractionModel?: string;
+  };
+  branching: {
+    maxCheckpoints?: number;
+  };
+}
+
+/**
  * User's model configuration stored in config.json
  */
 export interface ModelConfig {
   currentModel: string;
   favoriteModels: string[];
   summarization: SummarizationConfig;
+  strategy?: StrategyConfig;
 }
 
 /**
@@ -142,6 +165,7 @@ export interface SessionData {
   summary?: string;
   needsSummarization?: boolean;
   stats: SessionStats;
+  strategyState?: StrategyState;
 }
 
 /**
@@ -154,3 +178,65 @@ export interface SessionMetadata {
   updatedAt: string;
   messageCount: number;
 }
+
+/**
+ * Base state for all strategies
+ */
+export interface BaseStrategyState {
+  type: StrategyType;
+  messages: Message[];
+}
+
+/**
+ * Sliding Window strategy state
+ */
+export interface SlidingWindowState extends BaseStrategyState {
+  type: 'sliding';
+  windowSize: number;
+}
+
+/**
+ * Sticky Facts strategy state
+ */
+export interface StickyFactsState extends BaseStrategyState {
+  type: 'facts';
+  facts: Record<string, string>;
+  windowSize: number;
+  lastFactsUpdate: number;
+}
+
+/**
+ * Checkpoint for branching
+ */
+export interface Checkpoint {
+  id: string;
+  timestamp: number;
+  messageIndex: number;
+  name?: string;
+}
+
+/**
+ * Branch in conversation
+ */
+export interface Branch {
+  id: string;
+  name: string;
+  checkpointId: string;
+  messages: Message[];
+  createdAt: number;
+}
+
+/**
+ * Branching strategy state
+ */
+export interface BranchingState extends BaseStrategyState {
+  type: 'branching';
+  checkpoints: Checkpoint[];
+  branches: Branch[];
+  currentBranchId: string | null;
+}
+
+/**
+ * Union type for all strategy states
+ */
+export type StrategyState = SlidingWindowState | StickyFactsState | BranchingState;
