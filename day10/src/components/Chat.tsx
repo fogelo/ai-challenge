@@ -800,6 +800,15 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         <Text dimColor>
           <Text color="yellow">/strategy</Text> - управление стратегиями контекста | <Text color="yellow">/strategy [1-3]</Text>
         </Text>
+        <Text dimColor>
+          <Text color="yellow">/checkpoint</Text> - создать чекпойнт (Branching)
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/branch</Text> - управление ветками | <Text color="yellow">/branch new/list/main/[номер]</Text>
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/facts</Text> - показать извлечённые факты (Sticky Facts)
+        </Text>
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
