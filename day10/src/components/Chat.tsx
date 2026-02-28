@@ -801,13 +801,19 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           <Text color="yellow">/strategy</Text> - управление стратегиями контекста | <Text color="yellow">/strategy [1-3]</Text>
         </Text>
         <Text dimColor>
-          <Text color="yellow">/checkpoint</Text> - создать чекпойнт (Branching)
+          <Text color="yellow">/checkpoint</Text> - сохранить точку в истории для создания веток
         </Text>
         <Text dimColor>
-          <Text color="yellow">/branch</Text> - управление ветками | <Text color="yellow">/branch new/list/main/[номер]</Text>
+          <Text color="yellow">/branch new &lt;имя&gt;</Text> - создать ветку для исследования альтернатив
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/branch list</Text> - список веток | <Text color="yellow">/branch [номер]</Text> - переключиться | <Text color="yellow">/branch main</Text> - вернуться
         </Text>
         <Text dimColor>
           <Text color="yellow">/facts</Text> - показать извлечённые факты (Sticky Facts)
+        </Text>
+        <Text dimColor color="gray">
+          💡 Branching: /checkpoint → /branch new → исследуйте вариант → /branch main
         </Text>
       </Box>
 
