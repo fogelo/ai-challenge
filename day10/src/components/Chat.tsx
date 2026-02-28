@@ -8,6 +8,11 @@ import { SKILLS, SkillName } from '../skills/index.js';
 import { ModelRegistry } from '../models/registry.js';
 import { ConfigManager } from '../models/config.js';
 import { calculateApproximateTokens } from '../utils/tokens.js';
+import {
+  SlidingWindowStrategy,
+  StickyFactsStrategy,
+  BranchingStrategy,
+} from '../strategies/index.js';
 
 interface ChatProps {
   modelRegistry: ModelRegistry;
@@ -168,7 +173,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     }
   }
 
-  function handleCommand(rawInput: string): boolean {
+  async function handleCommand(rawInput: string): Promise<boolean> {
     const trimmed = rawInput.trim();
 
     // Temperature command
@@ -351,6 +356,121 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Strategy command
+    if (trimmed === '/strategy') {
+      let output = 'Доступные стратегии:\n';
+      output += '1. Sliding Window - последние N сообщений\n';
+      output += '2. Sticky Facts - ключевые факты + недавние сообщения\n';
+      output += '3. Branching - ветки разговора\n\n';
+      output += `Текущая: ${conversation.getStrategyName()}\n\n`;
+      output += 'Использование: /strategy <номер>';
+      setNotification(output);
+      return true;
+    }
+
+    if (trimmed.startsWith('/strategy ')) {
+      const num = parseInt(trimmed.split(' ')[1]);
+      await switchStrategy(num);
+      return true;
+    }
+
+    // Checkpoint command (for Branching)
+    if (trimmed === '/checkpoint') {
+      const strategy = conversation.getStrategy();
+      if (strategy instanceof BranchingStrategy) {
+        try {
+          const checkpointId = strategy.createCheckpoint();
+          setNotification(`✓ Чекпойнт создан (ID: ${checkpointId.slice(0, 8)}...)`);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          setNotification(`⚠ ${errorMessage}`);
+        }
+      } else {
+        setNotification('⚠ Чекпойнты доступны только в стратегии Branching');
+      }
+      return true;
+    }
+
+    // Branch command
+    if (trimmed.startsWith('/branch')) {
+      const strategy = conversation.getStrategy();
+
+      if (!(strategy instanceof BranchingStrategy)) {
+        setNotification('⚠ Ветки доступны только в стратегии Branching');
+        return true;
+      }
+
+      const parts = trimmed.split(' ');
+
+      if (parts.length === 1 || parts[1] === 'list') {
+        // List branches
+        const branches = strategy.listBranches();
+        const checkpoints = strategy.listCheckpoints();
+
+        let output = `\nЧекпойнты: ${checkpoints.length}\n`;
+        checkpoints.forEach((cp, i) => {
+          output += `  ${i + 1}. ${cp.name || 'Без имени'} - ${cp.messageIndex} сообщений - ${new Date(cp.timestamp).toLocaleString()}\n`;
+        });
+        output += `\nВетки: ${branches.length}\n`;
+        branches.forEach((b, i) => {
+          output += `  ${i + 1}. ${b.name} - ${b.messageCount} сообщений ${b.isCurrent ? '(активна)' : ''}\n`;
+        });
+        setNotification(output);
+      } else if (parts[1] === 'new') {
+        // Create new branch
+        const name = parts.slice(2).join(' ') || 'Без имени';
+        try {
+          const branchId = strategy.createBranch(name);
+          setNotification(`✓ Ветка "${name}" создана и активирована`);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          setNotification(`⚠ ${errorMessage}`);
+        }
+      } else if (parts[1] === 'main') {
+        // Switch to main
+        strategy.switchToMain();
+        setNotification('✓ Переключено на главную ветку');
+      } else {
+        // Switch to branch by number
+        const branchIndex = parseInt(parts[1]) - 1;
+        const branches = strategy.listBranches();
+
+        if (branchIndex >= 0 && branchIndex < branches.length) {
+          try {
+            strategy.switchBranch(branches[branchIndex].id);
+            setNotification(`✓ Переключено на ветку: ${branches[branchIndex].name}`);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            setNotification(`⚠ ${errorMessage}`);
+          }
+        } else {
+          setNotification('⚠ Неверный номер ветки');
+        }
+      }
+
+      return true;
+    }
+
+    // Facts command (for Sticky Facts)
+    if (trimmed === '/facts') {
+      const strategy = conversation.getStrategy();
+
+      if (strategy instanceof StickyFactsStrategy) {
+        const facts = strategy.getFacts();
+        const factCount = Object.keys(facts).length;
+
+        if (factCount === 0) {
+          setNotification('Факты ещё не извлечены');
+        } else {
+          const output = `\nИзвлечённые факты (${factCount}):\n${JSON.stringify(facts, null, 2)}`;
+          setNotification(output);
+        }
+      } else {
+        setNotification('⚠ Факты доступны только в стратегии Sticky Facts');
+      }
+      return true;
+    }
+
     // Compact command
     if (trimmed === '/compact') {
       if (isLoading || isSummarizing) {
@@ -502,6 +622,40 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     return false;
   }
 
+  const switchStrategy = async (num: number) => {
+    try {
+      const strategyConfig = configManager.getStrategyConfig();
+      let newStrategy;
+
+      switch (num) {
+        case 1:
+          newStrategy = new SlidingWindowStrategy(strategyConfig.slidingWindow.size);
+          break;
+        case 2:
+          newStrategy = new StickyFactsStrategy(
+            strategyConfig.stickyFacts.windowSize,
+            strategyConfig.stickyFacts.extractionModel || null
+          );
+          break;
+        case 3:
+          newStrategy = new BranchingStrategy(strategyConfig.branching.maxCheckpoints);
+          break;
+        default:
+          setNotification('⚠ Неверный номер стратегии. Используйте 1, 2 или 3.');
+          return;
+      }
+
+      setNotification(`Переключение на ${newStrategy.getName()}...`);
+
+      conversation.setStrategy(newStrategy);
+
+      setNotification(`✓ Переключено на ${newStrategy.getName()}`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setNotification(`⚠ Не удалось переключить стратегию: ${errorMessage}`);
+    }
+  };
+
   useInput(async (inputChar: string, key: Key) => {
     if (isLoading) return;
 
@@ -512,10 +666,10 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         setNotification(null);
         setLastResponseMetrics(null);
 
-        if (handleCommand(userInput)) return;
+        if (await handleCommand(userInput)) return;
 
         setError(null);
-        conversation.addUserMessage(userInput);
+        await conversation.addUserMessage(userInput);
         setMessages(conversation.getHistory());
         setIsLoading(true);
 
@@ -526,8 +680,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           }
 
           const systemPrompt = buildSystemPrompt(activeSkills);
-          const config = configManager.getSummarizationConfig();
-          const apiMessages = conversation.getMessagesForAPI(config.keepRecentMessages);
+          const apiMessages = await conversation.getMessagesForAPI();
 
           const apiResponse = await sendMessage(
             apiMessages,
@@ -567,7 +720,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             setSessionStats(newStats);
           }
 
-          conversation.addAssistantMessage(apiResponse.content, metadata);
+          await conversation.addAssistantMessage(apiResponse.content, metadata);
           setMessages(conversation.getHistory());
 
           // Check if summarization will be needed for next request
