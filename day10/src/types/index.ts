@@ -151,7 +151,7 @@ export interface ModelConfig {
   currentModel: string;
   favoriteModels: string[];
   summarization: SummarizationConfig;
-  strategy?: StrategyConfig;
+  strategy: StrategyConfig;
 }
 
 /**

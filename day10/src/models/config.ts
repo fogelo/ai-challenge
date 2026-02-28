@@ -1,4 +1,4 @@
-import { ModelConfig, SummarizationConfig } from '../types/index.js';
+import { ModelConfig, SummarizationConfig, StrategyConfig } from '../types/index.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -17,6 +17,18 @@ const DEFAULT_CONFIG: ModelConfig = {
   summarization: {
     threshold: 0.7,
     keepRecentMessages: 10,
+  },
+  strategy: {
+    default: 'sliding',
+    slidingWindow: {
+      size: 10,
+    },
+    stickyFacts: {
+      windowSize: 10,
+    },
+    branching: {
+      maxCheckpoints: 20,
+    },
   },
 };
 
@@ -52,6 +64,11 @@ export class ConfigManager {
           parsed.summarization.keepRecentMessages <= 0 ||
           !Number.isInteger(parsed.summarization.keepRecentMessages)) {
         parsed.summarization = DEFAULT_CONFIG.summarization;
+      }
+
+      // Add strategy defaults if missing
+      if (!parsed.strategy) {
+        parsed.strategy = DEFAULT_CONFIG.strategy;
       }
 
       return parsed;
@@ -93,6 +110,15 @@ export class ConfigManager {
       throw new Error(`Invalid keepRecentMessages: ${config.keepRecentMessages}. Must be a positive integer`);
     }
     return config;
+  }
+
+  getStrategyConfig(): StrategyConfig {
+    // Provide defaults if missing
+    if (!this.config.strategy) {
+      this.config.strategy = DEFAULT_CONFIG.strategy;
+      this.save(this.config);
+    }
+    return this.config.strategy;
   }
 
   setCurrentModel(modelId: string): void {
