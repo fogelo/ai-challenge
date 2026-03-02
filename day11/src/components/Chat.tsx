@@ -619,6 +619,40 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Profile command
+    if (trimmed.startsWith('/profile')) {
+      const parts = trimmed.split(' ').filter(Boolean);
+
+      if (parts.length < 2) {
+        setNotification('Использование: /profile set <ключ> <значение> | /profile show');
+        return true;
+      }
+
+      const subcommand = parts[1];
+      const memoryManager = conversation.getMemoryManager();
+
+      if (subcommand === 'set') {
+        if (parts.length < 4) {
+          setNotification('Использование: /profile set <ключ> <значение>');
+          return true;
+        }
+
+        const key = parts[2];
+        const value = parts.slice(3).join(' ');
+
+        await memoryManager.getLongTerm().updateProfile(key, value);
+        setNotification(`✓ Профиль обновлен: ${key} = ${value}`);
+      } else if (subcommand === 'show') {
+        const profile = memoryManager.getLongTerm().getProfile();
+        const output = '\n👤 ПРОФИЛЬ:\n\n' + JSON.stringify(profile, null, 2);
+        setNotification(output);
+      } else {
+        setNotification('Неизвестная подкоманда. Используйте: set, show');
+      }
+
+      return true;
+    }
+
     // Task command
     if (trimmed.startsWith('/task')) {
       const parts = trimmed.split(' ').filter(Boolean);
