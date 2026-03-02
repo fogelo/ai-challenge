@@ -619,6 +619,62 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Constraint command
+    if (trimmed.startsWith('/constraint')) {
+      const parts = trimmed.split(' ').filter(Boolean);
+
+      if (parts.length < 2) {
+        setNotification('Использование: /constraint add <тип> <значение> | /constraint remove <тип> <значение> | /constraint list');
+        return true;
+      }
+
+      const subcommand = parts[1];
+      const memoryManager = conversation.getMemoryManager();
+
+      if (subcommand === 'add') {
+        if (parts.length < 4) {
+          setNotification('Использование: /constraint add <forbidden|required|rules> <значение>');
+          return true;
+        }
+
+        const type = parts[2] as 'forbidden' | 'required' | 'rules';
+        const value = parts.slice(3).join(' ');
+
+        if (!['forbidden', 'required', 'rules'].includes(type)) {
+          setNotification('Тип должен быть: forbidden, required, или rules');
+          return true;
+        }
+
+        await memoryManager.getLongTerm().addConstraint(type, value);
+        setNotification(`✓ Ограничение добавлено: ${type} = ${value}`);
+      } else if (subcommand === 'remove') {
+        if (parts.length < 4) {
+          setNotification('Использование: /constraint remove <тип> <значение>');
+          return true;
+        }
+
+        const type = parts[2] as 'forbidden' | 'required' | 'rules';
+        const value = parts.slice(3).join(' ');
+
+        await memoryManager.getLongTerm().removeConstraint(type, value);
+        setNotification(`✓ Ограничение удалено: ${type} = ${value}`);
+      } else if (subcommand === 'list') {
+        const constraints = memoryManager.getLongTerm().getConstraints();
+        let output = '\n🚫 ОГРАНИЧЕНИЯ:\n\n';
+        output += `Запрещено: ${constraints.forbidden.join(', ') || 'нет'}\n`;
+        output += `Требуется: ${constraints.required.join(', ') || 'нет'}\n`;
+        output += `Правила:\n`;
+        constraints.rules.forEach(rule => {
+          output += `  - ${rule}\n`;
+        });
+        setNotification(output);
+      } else {
+        setNotification('Неизвестная подкоманда. Используйте: add, remove, list');
+      }
+
+      return true;
+    }
+
     // Profile command
     if (trimmed.startsWith('/profile')) {
       const parts = trimmed.split(' ').filter(Boolean);
