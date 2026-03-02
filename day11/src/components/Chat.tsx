@@ -1012,6 +1012,13 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     }
   });
 
+  // Initialize memory manager on app start
+  useEffect(() => {
+    conversation.initialize().catch(err => {
+      console.error('Failed to initialize memory:', err);
+    });
+  }, []);
+
   // Handle graceful shutdown on Ctrl+C
   useEffect(() => {
     const handleExit = () => {
