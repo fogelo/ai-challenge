@@ -941,7 +941,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             await performSummarization(false);
           }
 
-          const systemPrompt = buildSystemPrompt(activeSkills);
+          // Build system prompt with memory context
+          const basePrompt = buildSystemPrompt(activeSkills);
+          const systemPrompt = conversation.buildSystemPromptWithMemory(basePrompt);
           const apiMessages = await conversation.getMessagesForAPI();
 
           const apiResponse = await sendMessage(
@@ -984,6 +986,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
           await conversation.addAssistantMessage(apiResponse.content, metadata);
           setMessages(conversation.getHistory());
+
+          // Save to short-term memory
+          await conversation.getMemoryManager().getShortTerm().save();
 
           // Check if summarization will be needed for next request
           const summaryConfig = configManager.getSummarizationConfig();
