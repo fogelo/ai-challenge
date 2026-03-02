@@ -165,4 +165,61 @@ export class Conversation {
   needsSummarization(): boolean {
     return this.needsSummarizationFlag;
   }
+
+  buildSystemPromptWithMemory(basePrompt?: string): string {
+    const context = this.memoryManager.getContextForPrompt();
+    let prompt = basePrompt || 'Ты полезный AI ассистент.\n\n';
+
+    // Add profile
+    if (context.longTerm.profile.preferences.stack.length > 0) {
+      prompt += `# Профиль пользователя\n`;
+      prompt += `Предпочитаемый стек: ${context.longTerm.profile.preferences.stack.join(', ')}\n`;
+      if (context.longTerm.profile.preferences.frameworks.length > 0) {
+        prompt += `Фреймворки: ${context.longTerm.profile.preferences.frameworks.join(', ')}\n`;
+      }
+      prompt += `Стиль ответов: ${context.longTerm.profile.style.responseLength}\n`;
+      prompt += `Тон: ${context.longTerm.profile.style.tone}\n\n`;
+    }
+
+    // Add constraints
+    const constraints = context.longTerm.constraints;
+    if (constraints.forbidden.length > 0 || constraints.required.length > 0 || constraints.rules.length > 0) {
+      prompt += `# Ограничения\n`;
+      if (constraints.forbidden.length > 0) {
+        prompt += `Запрещено использовать: ${constraints.forbidden.join(', ')}\n`;
+      }
+      if (constraints.required.length > 0) {
+        prompt += `Обязательно использовать: ${constraints.required.join(', ')}\n`;
+      }
+      if (constraints.rules.length > 0) {
+        prompt += `Правила:\n`;
+        constraints.rules.forEach(rule => {
+          prompt += `- ${rule}\n`;
+        });
+      }
+      prompt += '\n';
+    }
+
+    // Add active task
+    if (context.working) {
+      prompt += `# Текущая задача\n`;
+      prompt += `${context.working.description}\n`;
+      if (Object.keys(context.working.context).length > 0) {
+        prompt += `Контекст: ${JSON.stringify(context.working.context, null, 2)}\n`;
+      }
+      prompt += '\n';
+    }
+
+    // Add high-relevance knowledge
+    const highRelevanceKnowledge = context.longTerm.knowledge.filter(f => f.relevance === 'high');
+    if (highRelevanceKnowledge.length > 0) {
+      prompt += `# Важная информация о проекте\n`;
+      highRelevanceKnowledge.forEach(fact => {
+        prompt += `- ${fact.content}\n`;
+      });
+      prompt += '\n';
+    }
+
+    return prompt;
+  }
 }
