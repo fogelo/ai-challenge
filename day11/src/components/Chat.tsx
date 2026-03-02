@@ -1074,6 +1074,15 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         <Text dimColor>
           <Text color="yellow">/facts</Text> - показать извлечённые факты (Sticky Facts)
         </Text>
+        <Text dimColor>
+          <Text color="yellow">/memory</Text> - показать память агента | <Text color="yellow">/memory [short|working|long]</Text> - слой
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/remember &lt;текст&gt;</Text> - запомнить факт | <Text color="yellow">/task start/done</Text> - задачи
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/profile set/show</Text> - профиль | <Text color="yellow">/constraint add/remove/list</Text> - ограничения
+        </Text>
         <Text dimColor color="gray">
           💡 Branching: /checkpoint → /branch new → исследуйте вариант → /branch main
         </Text>
