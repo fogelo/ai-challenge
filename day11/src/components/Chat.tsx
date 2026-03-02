@@ -619,6 +619,88 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Memory command
+    if (trimmed.startsWith('/memory')) {
+      const parts = trimmed.split(' ').filter(Boolean);
+
+      if (parts.length === 1) {
+        // Show all memory
+        const context = conversation.getMemoryManager().getContextForPrompt();
+
+        let output = '\n=== ПАМЯТЬ АГЕНТА ===\n\n';
+
+        output += '📝 КРАТКОСРОЧНАЯ ПАМЯТЬ (Short-term):\n';
+        output += `  Сообщений: ${context.shortTerm.length}\n\n`;
+
+        output += '🎯 РАБОЧАЯ ПАМЯТЬ (Working):\n';
+        if (context.working) {
+          output += `  Задача: ${context.working.description}\n`;
+          output += `  Статус: ${context.working.status}\n`;
+        } else {
+          output += '  Нет активной задачи\n';
+        }
+        output += '\n';
+
+        output += '💾 ДОЛГОВРЕМЕННАЯ ПАМЯТЬ (Long-term):\n';
+        output += `  Профиль:\n`;
+        output += `    Стек: ${context.longTerm.profile.preferences.stack.join(', ') || 'не задан'}\n`;
+        output += `    Тон: ${context.longTerm.profile.style.tone}\n`;
+        output += `  Ограничения:\n`;
+        output += `    Запрещено: ${context.longTerm.constraints.forbidden.join(', ') || 'нет'}\n`;
+        output += `    Требуется: ${context.longTerm.constraints.required.join(', ') || 'нет'}\n`;
+        output += `  Знания: ${context.longTerm.knowledge.length} фактов\n`;
+
+        setNotification(output);
+        return true;
+      }
+
+      const subcommand = parts[1];
+
+      if (subcommand === 'short' || subcommand === 'working' || subcommand === 'long') {
+        const context = conversation.getMemoryManager().getContextForPrompt();
+        let output = '';
+
+        if (subcommand === 'short') {
+          output = '\n📝 КРАТКОСРОЧНАЯ ПАМЯТЬ:\n\n';
+          context.shortTerm.forEach((msg, i) => {
+            output += `[${i + 1}] ${msg.role}: ${msg.content.substring(0, 60)}...\n`;
+          });
+        } else if (subcommand === 'working') {
+          output = '\n🎯 РАБОЧАЯ ПАМЯТЬ:\n\n';
+          if (context.working) {
+            output += `Задача: ${context.working.description}\n`;
+            output += `Статус: ${context.working.status}\n`;
+            output += `Контекст: ${JSON.stringify(context.working.context, null, 2)}\n`;
+          } else {
+            output += 'Нет активной задачи\n';
+          }
+        } else if (subcommand === 'long') {
+          output = '\n💾 ДОЛГОВРЕМЕННАЯ ПАМЯТЬ:\n\n';
+          output += 'Профиль:\n';
+          output += JSON.stringify(context.longTerm.profile, null, 2) + '\n\n';
+          output += 'Ограничения:\n';
+          output += JSON.stringify(context.longTerm.constraints, null, 2) + '\n\n';
+          output += `Знания (${context.longTerm.knowledge.length} фактов):\n`;
+          context.longTerm.knowledge.forEach(fact => {
+            output += `- [${fact.relevance}] ${fact.content}\n`;
+          });
+        }
+
+        setNotification(output);
+        return true;
+      }
+
+      if (parts[1] === 'clear' && parts[2]) {
+        const layer = parts[2] as 'short' | 'working' | 'long';
+        await conversation.getMemoryManager().clear(layer);
+        setNotification(`✓ Слой памяти "${layer}" очищен`);
+        return true;
+      }
+
+      setNotification('Использование: /memory [short|working|long] или /memory clear <слой>');
+      return true;
+    }
+
     return false;
   }
 
