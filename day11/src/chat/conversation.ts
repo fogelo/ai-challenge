@@ -6,6 +6,7 @@ import {
   StickyFactsStrategy,
   BranchingStrategy,
 } from '../strategies/index.js';
+import { MemoryManager } from '../memory/index.js';
 
 export class Conversation {
   private messages: Message[] = [];
@@ -15,11 +16,21 @@ export class Conversation {
   private needsSummarizationFlag: boolean = false;
   private strategy: IContextStrategy;
   private allMessages: Message[] = [];  // Keep full history for backup
+  private memoryManager: MemoryManager;
 
   constructor(sessionManager: SessionManager, strategy?: IContextStrategy) {
     this.sessionManager = sessionManager;
     this.currentSessionId = sessionManager.createSession();
     this.strategy = strategy || new SlidingWindowStrategy(10);
+    this.memoryManager = new MemoryManager();
+  }
+
+  async initialize(): Promise<void> {
+    await this.memoryManager.initialize();
+  }
+
+  getMemoryManager(): MemoryManager {
+    return this.memoryManager;
   }
 
   async addUserMessage(content: string): Promise<void> {
@@ -27,6 +38,7 @@ export class Conversation {
     this.messages.push(message);
     this.allMessages.push(message);
     await this.strategy.addMessage(message);
+    this.memoryManager.getShortTerm().addMessage(message);
   }
 
   async addAssistantMessage(content: string, metadata?: MessageMetadata): Promise<void> {
@@ -38,6 +50,7 @@ export class Conversation {
     this.messages.push(message);
     this.allMessages.push(message);
     await this.strategy.addMessage(message);
+    this.memoryManager.getShortTerm().addMessage(message);
   }
 
   getHistory(): Message[] {
