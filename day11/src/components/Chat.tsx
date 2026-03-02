@@ -619,6 +619,27 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Remember command
+    if (trimmed.startsWith('/remember ')) {
+      const content = trimmed.substring(10).trim(); // Remove "/remember "
+
+      if (!content) {
+        setNotification('Использование: /remember <что запомнить>');
+        return true;
+      }
+
+      const fact = {
+        id: `fact-${Date.now()}`,
+        content,
+        addedAt: new Date().toISOString(),
+        relevance: 'high' as const,
+      };
+
+      await conversation.getMemoryManager().getLongTerm().addKnowledge(fact);
+      setNotification(`✓ Сохранено в долговременную память: "${content}"`);
+      return true;
+    }
+
     // Memory command
     if (trimmed.startsWith('/memory')) {
       const parts = trimmed.split(' ').filter(Boolean);
