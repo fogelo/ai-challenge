@@ -1004,6 +1004,18 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           const questions = interviewFlow.getQuestions();
           const currentQuestion = questions[interviewStep];
 
+          // Handle skip on first question - create default profile
+          if (interviewStep === 0 && userInput.toLowerCase() === 'skip') {
+            const profileManager = conversation.getMemoryManager().getProfileManager();
+            const defaultProfile = profileManager.createDefaultProfile();
+            await profileManager.createProfile(defaultProfile);
+            await conversation.getMemoryManager().switchProfile(defaultProfile.name);
+
+            setNotification('✓ Создан профиль по умолчанию. Можете начать работу!');
+            setInterviewMode(false);
+            return;
+          }
+
           const answer = interviewFlow.parseAnswer(currentQuestion, userInput);
           const newAnswers = { ...interviewAnswers, [currentQuestion.id]: answer };
           setInterviewAnswers(newAnswers);
@@ -1127,6 +1139,33 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   useEffect(() => {
     conversation.initialize().catch(err => {
       console.error('Failed to initialize memory:', err);
+    });
+  }, []);
+
+  // Check for profiles on startup
+  useEffect(() => {
+    const checkProfiles = async () => {
+      const profileManager = conversation.getMemoryManager().getProfileManager();
+      const hasProfiles = await profileManager.hasProfiles();
+
+      if (!hasProfiles) {
+        const interviewFlow = new InterviewFlow();
+        const questions = interviewFlow.getQuestions();
+        const firstQuestion = questions[0];
+
+        setNotification(
+          '👋 Добро пожаловать! Давайте настроим ваш профиль.\n\n' +
+          'Начинаем интервью...\n' +
+          '(Вы можете пропустить интервью, введя "skip" на первом вопросе)\n\n' +
+          `Вопрос 1/${questions.length}: ${firstQuestion.question}`
+        );
+        setInterviewMode(true);
+        setInterviewStep(0);
+      }
+    };
+
+    checkProfiles().catch(err => {
+      console.error('Failed to check profiles:', err);
     });
   }, []);
 
