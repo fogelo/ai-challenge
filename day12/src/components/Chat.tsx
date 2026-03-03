@@ -13,6 +13,7 @@ import {
   StickyFactsStrategy,
   BranchingStrategy,
 } from '../strategies/index.js';
+import { InterviewFlow } from '../profile/index.js';
 
 interface ChatProps {
   modelRegistry: ModelRegistry;
@@ -114,6 +115,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     usage?: UsageInfo;
   } | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [interviewMode, setInterviewMode] = useState(false);
+  const [interviewStep, setInterviewStep] = useState(0);
+  const [interviewAnswers, setInterviewAnswers] = useState<Record<string, any>>({});
 
   async function performSummarization(forced: boolean = false): Promise<void> {
     const config = configManager.getSummarizationConfig();
@@ -675,40 +679,6 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
-    // Profile command
-    if (trimmed.startsWith('/profile')) {
-      const parts = trimmed.split(' ').filter(Boolean);
-
-      if (parts.length < 2) {
-        setNotification('Использование: /profile set <ключ> <значение> | /profile show');
-        return true;
-      }
-
-      const subcommand = parts[1];
-      const memoryManager = conversation.getMemoryManager();
-
-      if (subcommand === 'set') {
-        if (parts.length < 4) {
-          setNotification('Использование: /profile set <ключ> <значение>');
-          return true;
-        }
-
-        const key = parts[2];
-        const value = parts.slice(3).join(' ');
-
-        await memoryManager.getLongTerm().updateProfile(key, value);
-        setNotification(`✓ Профиль обновлен: ${key} = ${value}`);
-      } else if (subcommand === 'show') {
-        const profile = memoryManager.getLongTerm().getProfile();
-        const output = '\n👤 ПРОФИЛЬ:\n\n' + JSON.stringify(profile, null, 2);
-        setNotification(output);
-      } else {
-        setNotification('Неизвестная подкоманда. Используйте: set, show');
-      }
-
-      return true;
-    }
-
     // Task command
     if (trimmed.startsWith('/task')) {
       const parts = trimmed.split(' ').filter(Boolean);
@@ -881,6 +851,106 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Profile commands
+    if (trimmed.startsWith('/profile')) {
+      const parts = trimmed.split(' ').filter(Boolean);
+
+      if (parts.length === 1 || parts[1] === 'show') {
+        const profile = conversation.getMemoryManager().getProfileManager().getActiveProfile();
+
+        if (!profile) {
+          setNotification('❌ Нет активного профиля');
+          return true;
+        }
+
+        let output = '\n👤 АКТИВНЫЙ ПРОФИЛЬ:\n\n';
+        output += `Имя: ${profile.name}\n`;
+        output += `Стиль: ${profile.responseStyle}\n`;
+        output += `Тон: ${profile.tone}\n`;
+        output += `Примеры кода: ${profile.includeCodeExamples ? 'да' : 'нет'}\n`;
+        output += `Детализация: ${profile.detailLevel}\n`;
+        output += `Контекст: ${profile.context.purpose}\n`;
+
+        if (profile.stack.length > 0) {
+          output += `Стек: ${profile.stack.join(', ')}\n`;
+        }
+
+        if (profile.preferredLanguage) {
+          output += `Язык: ${profile.preferredLanguage}\n`;
+        }
+
+        setNotification(output);
+        return true;
+      }
+
+      if (parts[1] === 'list') {
+        const profiles = await conversation.getMemoryManager().getProfileManager().listProfiles();
+        const activeProfile = conversation.getMemoryManager().getProfileManager().getActiveProfile();
+
+        if (profiles.length === 0) {
+          setNotification('Нет созданных профилей');
+          return true;
+        }
+
+        let output = '\n📋 ПРОФИЛИ:\n\n';
+        profiles.forEach((meta, index) => {
+          const active = meta.name === activeProfile?.name ? ' ← активный' : '';
+          output += `${index + 1}. ${meta.name}${active}\n`;
+          output += `   Создан: ${new Date(meta.createdAt).toLocaleString('ru-RU')}\n`;
+        });
+
+        setNotification(output);
+        return true;
+      }
+
+      if (parts[1] === 'switch') {
+        if (parts.length < 3) {
+          setNotification('Использование: /profile switch <имя>');
+          return true;
+        }
+
+        const name = parts.slice(2).join(' ');
+        const success = await conversation.getMemoryManager().switchProfile(name);
+
+        if (success) {
+          setNotification(`✓ Профиль переключен на "${name}"`);
+        } else {
+          setNotification(`❌ Профиль "${name}" не найден`);
+        }
+
+        return true;
+      }
+
+      if (parts[1] === 'delete') {
+        if (parts.length < 3) {
+          setNotification('Использование: /profile delete <имя>');
+          return true;
+        }
+
+        const name = parts.slice(2).join(' ');
+        const success = await conversation.getMemoryManager().getProfileManager().deleteProfile(name);
+
+        if (success) {
+          setNotification(`✓ Профиль "${name}" удален`);
+        } else {
+          setNotification('❌ Не удалось удалить профиль (активный или последний)');
+        }
+
+        return true;
+      }
+
+      if (parts[1] === 'create') {
+        setNotification('🎤 Начинаем интервью для создания профиля...\n(Введите "skip" для пропуска вопроса, если доступно)');
+        setInterviewMode(true);
+        setInterviewStep(0);
+        setInterviewAnswers({});
+        return true;
+      }
+
+      setNotification('Команды: /profile show | list | switch <имя> | delete <имя> | create');
+      return true;
+    }
+
     return false;
   }
 
@@ -927,6 +997,47 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         setInput('');
         setNotification(null);
         setLastResponseMetrics(null);
+
+        // Handle interview mode
+        if (interviewMode) {
+          const interviewFlow = new InterviewFlow();
+          const questions = interviewFlow.getQuestions();
+          const currentQuestion = questions[interviewStep];
+
+          const answer = interviewFlow.parseAnswer(currentQuestion, userInput);
+          const newAnswers = { ...interviewAnswers, [currentQuestion.id]: answer };
+          setInterviewAnswers(newAnswers);
+
+          // Move to next question
+          if (interviewStep < questions.length - 1) {
+            setInterviewStep(interviewStep + 1);
+            const nextQuestion = questions[interviewStep + 1];
+            setNotification(
+              `Вопрос ${interviewStep + 2}/${questions.length}:\n${nextQuestion.question}\n` +
+              (nextQuestion.options ? nextQuestion.options.join('\n') : '')
+            );
+          } else {
+            // Interview complete
+            const validation = interviewFlow.validateAnswers(newAnswers);
+
+            if (!validation.valid) {
+              setNotification(`❌ Ошибка: ${validation.errors.join(', ')}`);
+              setInterviewMode(false);
+              return;
+            }
+
+            const profile = interviewFlow.buildProfile(newAnswers);
+            await conversation.getMemoryManager().getProfileManager().createProfile(profile);
+            await conversation.getMemoryManager().switchProfile(profile.name);
+
+            setNotification(`✓ Профиль "${profile.name}" создан и активирован!`);
+            setInterviewMode(false);
+            setInterviewStep(0);
+            setInterviewAnswers({});
+          }
+
+          return;
+        }
 
         if (await handleCommand(userInput)) return;
 
@@ -1093,7 +1204,10 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           <Text color="yellow">/remember &lt;текст&gt;</Text> - запомнить факт | <Text color="yellow">/task start/done</Text> - задачи
         </Text>
         <Text dimColor>
-          <Text color="yellow">/profile set/show</Text> - профиль | <Text color="yellow">/constraint add/remove/list</Text> - ограничения
+          <Text color="yellow">/profile show/list/create</Text> - управление профилями | <Text color="yellow">/profile switch/delete</Text>
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/constraint add/remove/list</Text> - ограничения
         </Text>
         <Text dimColor color="gray">
           💡 Branching: /checkpoint → /branch new → исследуйте вариант → /branch main
