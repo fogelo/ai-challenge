@@ -1,0 +1,1185 @@
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, Key } from 'ink';
+import { Conversation } from '../chat/conversation.js';
+import { SessionManager } from '../chat/session.js';
+import { sendMessage } from '../api/openrouter.js';
+import { Message, UsageInfo, SessionStats, MessageMetadata } from '../types/index.js';
+import { SKILLS, SkillName } from '../skills/index.js';
+import { ModelRegistry } from '../models/registry.js';
+import { ConfigManager } from '../models/config.js';
+import { calculateApproximateTokens } from '../utils/tokens.js';
+import {
+  SlidingWindowStrategy,
+  StickyFactsStrategy,
+  BranchingStrategy,
+} from '../strategies/index.js';
+
+interface ChatProps {
+  modelRegistry: ModelRegistry;
+  configManager: ConfigManager;
+}
+
+function buildSystemPrompt(activeSkills: SkillName[]): string | undefined {
+  if (activeSkills.length === 0) return undefined;
+  return activeSkills.map((name) => SKILLS[name]).join('\n\n---\n\n');
+}
+
+function getContextWarning(
+  totalPromptTokens: number,
+  modelId: string,
+  modelRegistry: ModelRegistry
+): { level: 'none' | 'warning' | 'critical'; message: string } {
+  const model = modelRegistry.getModel(modelId);
+  const contextLength = model?.context_length;
+
+  if (!contextLength || totalPromptTokens === 0) {
+    return { level: 'none', message: '' };
+  }
+
+  const usagePercent = (totalPromptTokens / contextLength) * 100;
+  const remaining = contextLength - totalPromptTokens;
+  const remainingPercent = ((remaining / contextLength) * 100).toFixed(1);
+
+  if (usagePercent >= 90) {
+    return {
+      level: 'critical',
+      message: `⚠️  КРИТИЧНО: Контекст почти заполнен ${totalPromptTokens}/${contextLength} (${usagePercent.toFixed(1)}%). Осталось ${remainingPercent}%`,
+    };
+  }
+
+  if (usagePercent >= 70) {
+    return {
+      level: 'warning',
+      message: `⚡ Предупреждение: Контекст ${totalPromptTokens}/${contextLength} (${usagePercent.toFixed(1)}%). Осталось ${remainingPercent}%`,
+    };
+  }
+
+  return {
+    level: 'none',
+    message: `Контекст: ${totalPromptTokens}/${contextLength} (${usagePercent.toFixed(1)}%). Осталось ${remainingPercent}%`,
+  };
+}
+
+function checkContextThreshold(
+  conversation: Conversation,
+  currentModel: string,
+  modelRegistry: ModelRegistry,
+  threshold: number
+): boolean {
+  const messages = conversation.getHistory();
+  const totalTokens = calculateApproximateTokens(messages);
+  const model = modelRegistry.getModel(currentModel);
+  const contextLength = model?.context_length;
+
+  if (!contextLength || totalTokens === 0) {
+    return false;
+  }
+
+  const percentage = totalTokens / contextLength;
+  return percentage > threshold;
+}
+
+function calculateTokenSavings(
+  originalMessages: Message[],
+  summaryMessage: Message,
+  recentMessages: Message[]
+): { original: number; compressed: number; savings: number } {
+  const original = calculateApproximateTokens(originalMessages);
+  const compressed = calculateApproximateTokens([summaryMessage, ...recentMessages]);
+  const savings = Math.round(((original - compressed) / original) * 100);
+
+  return { original, compressed, savings };
+}
+
+export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
+  const [sessionManager] = useState(() => new SessionManager());
+  const [conversation] = useState(() => new Conversation(sessionManager));
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [activeSkills, setActiveSkills] = useState<SkillName[]>([]);
+  const [notification, setNotification] = useState<string | null>(null);
+  const [temperature, setTemperature] = useState<number>(1.0);
+  const [currentModel, setCurrentModel] = useState(configManager.getConfig().currentModel);
+  const [sessionStats, setSessionStats] = useState<SessionStats>({
+    totalTokens: 0,
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    totalCost: 0,
+    requestCount: 0,
+  });
+  const [lastResponseMetrics, setLastResponseMetrics] = useState<{
+    responseTime: number;
+    usage?: UsageInfo;
+  } | null>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+
+  async function performSummarization(forced: boolean = false): Promise<void> {
+    const config = configManager.getSummarizationConfig();
+    const messages = conversation.getHistory();
+
+    // Check if summarization is needed
+    if (messages.length <= config.keepRecentMessages) {
+      if (forced) {
+        setNotification('ℹ️  Суммаризация не требуется (недостаточно сообщений)');
+      }
+      return;
+    }
+
+    setIsSummarizing(true);
+    setNotification('⚡ Выполняется суммаризация контекста...');
+
+    try {
+      // Messages to summarize (all except recent)
+      const toSummarize = messages.slice(0, -config.keepRecentMessages);
+      const recentMessages = messages.slice(-config.keepRecentMessages);
+
+      // Build summarization prompt
+      const summaryPrompt = `Создай краткое резюме следующего диалога, сохраняя ключевые темы, решения и важный контекст. Формат: 2-3 абзаца на русском языке.`;
+
+      const summaryMessages: Message[] = [
+        { role: 'system', content: summaryPrompt },
+        ...toSummarize,
+      ];
+
+      // Get summary from API
+      const response = await sendMessage(summaryMessages, currentModel, undefined, temperature);
+
+      // Update conversation state
+      conversation.setSummary(response.content);
+      conversation.setNeedsSummarization(false);
+
+      // Calculate savings
+      const savings = calculateTokenSavings(messages, { role: 'system', content: response.content }, recentMessages);
+
+      // Show success notification
+      if (forced) {
+        setNotification(
+          `✓ Готово! Сжато ${toSummarize.length} сообщений, сохранены последние ${config.keepRecentMessages}\n` +
+          `💾 Токены: ${savings.original} → ~${savings.compressed} (экономия ${savings.savings}%)`
+        );
+      } else {
+        setNotification(
+          `✓ Контекст сжат: ${toSummarize.length} сообщений → summary + ${config.keepRecentMessages} последних`
+        );
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setNotification(`❌ Ошибка суммаризации: ${errorMsg}`);
+      setError(`Summarization error: ${errorMsg}`);
+    } finally {
+      setIsSummarizing(false);
+    }
+  }
+
+  async function handleCommand(rawInput: string): Promise<boolean> {
+    const trimmed = rawInput.trim();
+
+    // Temperature command
+    if (trimmed.startsWith('/temperature ')) {
+      const value = trimmed.slice('/temperature '.length).trim();
+      const temp = parseFloat(value);
+
+      if (isNaN(temp) || temp < 0 || temp > 2) {
+        setNotification('Temperature должен быть числом от 0 до 2');
+        return true;
+      }
+
+      setTemperature(temp);
+      setNotification(`Temperature установлен на ${temp}`);
+      return true;
+    }
+
+    if (trimmed === '/temperature') {
+      setNotification(`Текущий temperature: ${temperature}`);
+      return true;
+    }
+
+    // Skills commands
+    if (trimmed === '/skills') {
+      if (activeSkills.length === 0) {
+        setNotification('Нет активных skills. Используй /skill <name1> <name2>...');
+      } else {
+        setNotification(`Активные skills: ${activeSkills.join(', ')}`);
+      }
+      return true;
+    }
+
+    if (trimmed.startsWith('/skill ')) {
+      const args = trimmed.slice('/skill '.length).trim().split(/\s+/);
+
+      if (args[0] === 'off') {
+        setActiveSkills([]);
+        setNotification('Skills отключены');
+        return true;
+      }
+
+      const validSkills = Object.keys(SKILLS) as SkillName[];
+      const requested = args.filter((a) => validSkills.includes(a as SkillName)) as SkillName[];
+      const unknown = args.filter((a) => !validSkills.includes(a as SkillName));
+
+      if (unknown.length > 0) {
+        setNotification(`Неизвестные skills: ${unknown.join(', ')}. Доступные: ${validSkills.join(', ')}`);
+        return true;
+      }
+
+      setActiveSkills(requested);
+      setNotification(`Skills активированы: ${requested.join(', ')}`);
+      return true;
+    }
+
+    // Model commands
+    if (trimmed === '/model') {
+      const config = configManager.getConfig();
+      const favorites = config.favoriteModels;
+
+      let output = 'Доступные модели:\n';
+      favorites.forEach((modelId, index) => {
+        const model = modelRegistry.getModel(modelId);
+        const name = model ? model.name : modelId;
+        const current = modelId === currentModel ? ' ← текущая' : '';
+        output += `${index + 1}. ${name} (${modelId})${current}\n`;
+      });
+
+      output += '\nКоманды:\n';
+      output += '/model <номер> - переключиться\n';
+      output += '/model add <model-id> - добавить модель\n';
+      output += '/model remove <номер> - удалить модель';
+
+      setNotification(output);
+      return true;
+    }
+
+    if (trimmed.startsWith('/model ') && !trimmed.startsWith('/model add') && !trimmed.startsWith('/model remove')) {
+      const arg = trimmed.slice('/model '.length).trim();
+      const num = parseInt(arg, 10);
+
+      if (isNaN(num)) {
+        setNotification('Используй номер модели, например: /model 3');
+        return true;
+      }
+
+      const config = configManager.getConfig();
+      const favorites = config.favoriteModels;
+
+      if (num < 1 || num > favorites.length) {
+        setNotification(`Номер должен быть от 1 до ${favorites.length}`);
+        return true;
+      }
+
+      const modelId = favorites[num - 1];
+      const model = modelRegistry.getModel(modelId);
+
+      if (!model) {
+        setNotification(`Модель ${modelId} не найдена в OpenRouter`);
+        return true;
+      }
+
+      configManager.setCurrentModel(modelId);
+      setCurrentModel(modelId);
+      setNotification(`Модель переключена на: ${model.name} (${modelId})`);
+      return true;
+    }
+
+    if (trimmed.startsWith('/model add ')) {
+      const modelId = trimmed.slice('/model add '.length).trim();
+
+      if (!modelId) {
+        setNotification('Укажите ID модели, например: /model add anthropic/claude-3-opus');
+        return true;
+      }
+
+      const model = modelRegistry.getModel(modelId);
+
+      if (!model) {
+        setNotification(`Модель ${modelId} не найдена в OpenRouter`);
+        return true;
+      }
+
+      const added = configManager.addFavoriteModel(modelId);
+
+      if (!added) {
+        setNotification(`Модель ${model.name} уже в списке`);
+        return true;
+      }
+
+      setNotification(`Модель ${model.name} (${modelId}) добавлена в список`);
+      return true;
+    }
+
+    if (trimmed.startsWith('/model remove ')) {
+      const arg = trimmed.slice('/model remove '.length).trim();
+      const num = parseInt(arg, 10);
+
+      if (isNaN(num)) {
+        setNotification('Используй номер модели, например: /model remove 2');
+        return true;
+      }
+
+      const config = configManager.getConfig();
+      const favorites = config.favoriteModels;
+
+      if (num < 1 || num > favorites.length) {
+        setNotification(`Номер должен быть от 1 до ${favorites.length}`);
+        return true;
+      }
+
+      const modelId = favorites[num - 1];
+      const model = modelRegistry.getModel(modelId);
+      const modelName = model ? model.name : modelId;
+
+      const removed = configManager.removeFavoriteModel(num - 1);
+
+      if (!removed) {
+        setNotification('Не могу удалить последнюю модель из списка');
+        return true;
+      }
+
+      setNotification(`Модель ${modelName} удалена из списка`);
+      return true;
+    }
+
+    // Clear command
+    if (trimmed === '/clear') {
+      conversation.clear();
+      setSessionStats({
+        totalTokens: 0,
+        totalPromptTokens: 0,
+        totalCompletionTokens: 0,
+        totalCost: 0,
+        requestCount: 0,
+      });
+      setLastResponseMetrics(null);
+      setError(null);
+      setNotification('Контекст очищен. Создана новая сессия. Предыдущая сессия сохранена.');
+      return true;
+    }
+
+    // Strategy command
+    if (trimmed === '/strategy') {
+      let output = 'Доступные стратегии:\n';
+      output += '1. Sliding Window - последние N сообщений\n';
+      output += '2. Sticky Facts - ключевые факты + недавние сообщения\n';
+      output += '3. Branching - ветки разговора\n\n';
+      output += `Текущая: ${conversation.getStrategyName()}\n\n`;
+      output += 'Использование: /strategy <номер>';
+      setNotification(output);
+      return true;
+    }
+
+    if (trimmed.startsWith('/strategy ')) {
+      const num = parseInt(trimmed.split(' ')[1]);
+      await switchStrategy(num);
+      return true;
+    }
+
+    // Checkpoint command (for Branching)
+    if (trimmed === '/checkpoint') {
+      const strategy = conversation.getStrategy();
+      if (strategy instanceof BranchingStrategy) {
+        try {
+          const checkpointId = strategy.createCheckpoint();
+          setNotification(`✓ Чекпойнт создан (ID: ${checkpointId.slice(0, 8)}...)`);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          setNotification(`⚠ ${errorMessage}`);
+        }
+      } else {
+        setNotification('⚠ Чекпойнты доступны только в стратегии Branching');
+      }
+      return true;
+    }
+
+    // Branch command
+    if (trimmed.startsWith('/branch')) {
+      const strategy = conversation.getStrategy();
+
+      if (!(strategy instanceof BranchingStrategy)) {
+        setNotification('⚠ Ветки доступны только в стратегии Branching');
+        return true;
+      }
+
+      const parts = trimmed.split(' ');
+
+      if (parts.length === 1 || parts[1] === 'list') {
+        // List branches
+        const branches = strategy.listBranches();
+        const checkpoints = strategy.listCheckpoints();
+
+        let output = `\nЧекпойнты: ${checkpoints.length}\n`;
+        checkpoints.forEach((cp, i) => {
+          output += `  ${i + 1}. ${cp.name || 'Без имени'} - ${cp.messageIndex} сообщений - ${new Date(cp.timestamp).toLocaleString()}\n`;
+        });
+        output += `\nВетки: ${branches.length}\n`;
+        branches.forEach((b, i) => {
+          output += `  ${i + 1}. ${b.name} - ${b.messageCount} сообщений ${b.isCurrent ? '(активна)' : ''}\n`;
+        });
+        setNotification(output);
+      } else if (parts[1] === 'new') {
+        // Create new branch
+        const name = parts.slice(2).join(' ') || 'Без имени';
+        try {
+          const branchId = strategy.createBranch(name);
+          setNotification(`✓ Ветка "${name}" создана и активирована`);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          setNotification(`⚠ ${errorMessage}`);
+        }
+      } else if (parts[1] === 'main') {
+        // Switch to main
+        strategy.switchToMain();
+        setNotification('✓ Переключено на главную ветку');
+      } else {
+        // Switch to branch by number
+        const branchIndex = parseInt(parts[1]) - 1;
+        const branches = strategy.listBranches();
+
+        if (branchIndex >= 0 && branchIndex < branches.length) {
+          try {
+            strategy.switchBranch(branches[branchIndex].id);
+            setNotification(`✓ Переключено на ветку: ${branches[branchIndex].name}`);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            setNotification(`⚠ ${errorMessage}`);
+          }
+        } else {
+          setNotification('⚠ Неверный номер ветки');
+        }
+      }
+
+      return true;
+    }
+
+    // Facts command (for Sticky Facts)
+    if (trimmed === '/facts') {
+      const strategy = conversation.getStrategy();
+
+      if (strategy instanceof StickyFactsStrategy) {
+        const facts = strategy.getFacts();
+        const factCount = Object.keys(facts).length;
+
+        if (factCount === 0) {
+          setNotification('Факты ещё не извлечены');
+        } else {
+          const output = `\nИзвлечённые факты (${factCount}):\n${JSON.stringify(facts, null, 2)}`;
+          setNotification(output);
+        }
+      } else {
+        setNotification('⚠ Факты доступны только в стратегии Sticky Facts');
+      }
+      return true;
+    }
+
+    // Compact command
+    if (trimmed === '/compact') {
+      if (isLoading || isSummarizing) {
+        setNotification('⏳ Дождитесь завершения текущей операции');
+        return true;
+      }
+
+      const config = configManager.getSummarizationConfig();
+      const messages = conversation.getHistory();
+
+      if (messages.length <= config.keepRecentMessages) {
+        const model = modelRegistry.getModel(currentModel);
+        const contextLength = model?.context_length || 0;
+        const totalTokens = calculateApproximateTokens(messages);
+        const percentage = contextLength > 0 ? ((totalTokens / contextLength) * 100).toFixed(1) : '0.0';
+
+        setNotification(`ℹ️  Суммаризация не требуется (контекст: ${percentage}%)`);
+        return true;
+      }
+
+      performSummarization(true);
+      return true;
+    }
+
+    // Resume command - list sessions
+    if (trimmed === '/resume') {
+      const sessions = conversation.listSessions();
+
+      if (sessions.length === 0) {
+        setNotification('Нет сохраненных сессий');
+        return true;
+      }
+
+      let output = 'Сохраненные сессии:\n';
+      sessions.forEach((session, index) => {
+        const createdDate = new Date(session.createdAt).toLocaleString('ru-RU');
+        const updatedDate = new Date(session.updatedAt).toLocaleString('ru-RU');
+        output += `${index + 1}. ${session.fileName}\n`;
+        output += `   ID: ${session.id}\n`;
+        output += `   Создана: ${createdDate}\n`;
+        output += `   Обновлена: ${updatedDate}\n`;
+        output += `   Сообщений: ${session.messageCount}\n`;
+      });
+      output += '\nИспользуй /resume <номер> для загрузки';
+
+      setNotification(output);
+      return true;
+    }
+
+    // Resume command - load specific session
+    if (trimmed.startsWith('/resume ')) {
+      const arg = trimmed.slice('/resume '.length).trim();
+      const num = parseInt(arg, 10);
+
+      if (isNaN(num)) {
+        setNotification('Используй номер сессии, например: /resume 1');
+        return true;
+      }
+
+      const sessions = conversation.listSessions();
+
+      if (num < 1 || num > sessions.length) {
+        setNotification(`Номер должен быть от 1 до ${sessions.length}`);
+        return true;
+      }
+
+      const targetSession = sessions[num - 1];
+      const result = conversation.resumeSession(targetSession.id);
+
+      if (!result.success) {
+        setNotification(`Не удалось загрузить сессию ${targetSession.id}`);
+        return true;
+      }
+
+      // Restore session state
+      setMessages(conversation.getHistory());
+
+      if (result.stats) {
+        setSessionStats(result.stats);
+      }
+
+      setNotification(
+        `Сессия загружена: ${targetSession.fileName}\n` +
+        `Сообщений: ${targetSession.messageCount}\n` +
+        `Создана: ${new Date(targetSession.createdAt).toLocaleString('ru-RU')}`
+      );
+      return true;
+    }
+
+    // Stats command
+    if (trimmed === '/stats') {
+      const history = conversation.getHistory();
+
+      // Фильтруем только пары user-assistant
+      const requests: Array<{
+        userMsg: Message;
+        assistantMsg: Message;
+        requestNumber: number;
+      }> = [];
+
+      for (let i = 0; i < history.length - 1; i++) {
+        if (history[i].role === 'user' && history[i + 1].role === 'assistant') {
+          requests.push({
+            userMsg: history[i],
+            assistantMsg: history[i + 1],
+            requestNumber: requests.length + 1,
+          });
+        }
+      }
+
+      if (requests.length === 0) {
+        setNotification('Нет запросов для отображения');
+        return true;
+      }
+
+      // Формируем вывод
+      let output = 'История запросов:\n\n';
+
+      requests.forEach(({ userMsg, assistantMsg, requestNumber }) => {
+        const meta = assistantMsg.metadata;
+        const preview = userMsg.content.slice(0, 50) + (userMsg.content.length > 50 ? '...' : '');
+
+        output += `#${requestNumber}. "${preview}"\n`;
+
+        if (meta) {
+          output += `   Токены: ${meta.usage?.total_tokens ?? 'N/A'} `;
+          output += `(prompt: ${meta.usage?.prompt_tokens ?? 'N/A'}, `;
+          output += `completion: ${meta.usage?.completion_tokens ?? 'N/A'})\n`;
+          output += `   Стоимость: ${meta.cost !== undefined ? `$${meta.cost.toFixed(6)}` : 'N/A'}\n`;
+          output += `   Время: ${meta.responseTime?.toFixed(2) ?? 'N/A'}s\n`;
+          output += `   Модель: ${meta.model ?? 'N/A'}\n`;
+        } else {
+          output += '   Метрики недоступны\n';
+        }
+        output += '\n';
+      });
+
+      // Итоговая статистика
+      output += `Всего запросов: ${requests.length}\n`;
+      output += `Всего токенов: ${sessionStats.totalTokens} `;
+      output += `(prompt: ${sessionStats.totalPromptTokens}, `;
+      output += `completion: ${sessionStats.totalCompletionTokens})\n`;
+      output += `Общая стоимость: $${sessionStats.totalCost.toFixed(6)}`;
+
+      setNotification(output);
+      return true;
+    }
+
+    // Constraint command
+    if (trimmed.startsWith('/constraint')) {
+      const parts = trimmed.split(' ').filter(Boolean);
+
+      if (parts.length < 2) {
+        setNotification('Использование: /constraint add <тип> <значение> | /constraint remove <тип> <значение> | /constraint list');
+        return true;
+      }
+
+      const subcommand = parts[1];
+      const memoryManager = conversation.getMemoryManager();
+
+      if (subcommand === 'add') {
+        if (parts.length < 4) {
+          setNotification('Использование: /constraint add <forbidden|required|rules> <значение>');
+          return true;
+        }
+
+        const type = parts[2] as 'forbidden' | 'required' | 'rules';
+        const value = parts.slice(3).join(' ');
+
+        if (!['forbidden', 'required', 'rules'].includes(type)) {
+          setNotification('Тип должен быть: forbidden, required, или rules');
+          return true;
+        }
+
+        await memoryManager.getLongTerm().addConstraint(type, value);
+        setNotification(`✓ Ограничение добавлено: ${type} = ${value}`);
+      } else if (subcommand === 'remove') {
+        if (parts.length < 4) {
+          setNotification('Использование: /constraint remove <тип> <значение>');
+          return true;
+        }
+
+        const type = parts[2] as 'forbidden' | 'required' | 'rules';
+        const value = parts.slice(3).join(' ');
+
+        await memoryManager.getLongTerm().removeConstraint(type, value);
+        setNotification(`✓ Ограничение удалено: ${type} = ${value}`);
+      } else if (subcommand === 'list') {
+        const constraints = memoryManager.getLongTerm().getConstraints();
+        let output = '\n🚫 ОГРАНИЧЕНИЯ:\n\n';
+        output += `Запрещено: ${constraints.forbidden.join(', ') || 'нет'}\n`;
+        output += `Требуется: ${constraints.required.join(', ') || 'нет'}\n`;
+        output += `Правила:\n`;
+        constraints.rules.forEach(rule => {
+          output += `  - ${rule}\n`;
+        });
+        setNotification(output);
+      } else {
+        setNotification('Неизвестная подкоманда. Используйте: add, remove, list');
+      }
+
+      return true;
+    }
+
+    // Profile command
+    if (trimmed.startsWith('/profile')) {
+      const parts = trimmed.split(' ').filter(Boolean);
+
+      if (parts.length < 2) {
+        setNotification('Использование: /profile set <ключ> <значение> | /profile show');
+        return true;
+      }
+
+      const subcommand = parts[1];
+      const memoryManager = conversation.getMemoryManager();
+
+      if (subcommand === 'set') {
+        if (parts.length < 4) {
+          setNotification('Использование: /profile set <ключ> <значение>');
+          return true;
+        }
+
+        const key = parts[2];
+        const value = parts.slice(3).join(' ');
+
+        await memoryManager.getLongTerm().updateProfile(key, value);
+        setNotification(`✓ Профиль обновлен: ${key} = ${value}`);
+      } else if (subcommand === 'show') {
+        const profile = memoryManager.getLongTerm().getProfile();
+        const output = '\n👤 ПРОФИЛЬ:\n\n' + JSON.stringify(profile, null, 2);
+        setNotification(output);
+      } else {
+        setNotification('Неизвестная подкоманда. Используйте: set, show');
+      }
+
+      return true;
+    }
+
+    // Task command
+    if (trimmed.startsWith('/task')) {
+      const parts = trimmed.split(' ').filter(Boolean);
+
+      if (parts.length < 2) {
+        setNotification('Использование: /task start <описание> | /task context <данные> | /task done | /task show');
+        return true;
+      }
+
+      const subcommand = parts[1];
+      const memoryManager = conversation.getMemoryManager();
+
+      if (subcommand === 'start') {
+        const description = parts.slice(2).join(' ');
+        if (!description) {
+          setNotification('Укажите описание задачи');
+          return true;
+        }
+
+        const task = {
+          taskId: `task-${Date.now()}`,
+          description,
+          status: 'in_progress' as const,
+          context: {},
+          startedAt: new Date().toISOString(),
+        };
+
+        await memoryManager.getWorking().setTask(task);
+        setNotification(`✓ Задача создана: "${description}"`);
+      } else if (subcommand === 'context') {
+        const contextData = parts.slice(2).join(' ');
+        if (!contextData) {
+          setNotification('Укажите контекст в формате key=value');
+          return true;
+        }
+
+        const [key, ...valueParts] = contextData.split('=');
+        const value = valueParts.join('=');
+
+        try {
+          await memoryManager.getWorking().addContext(key, value);
+          setNotification(`✓ Контекст добавлен: ${key} = ${value}`);
+        } catch (error) {
+          setNotification('❌ Нет активной задачи. Используйте /task start');
+        }
+      } else if (subcommand === 'done') {
+        await memoryManager.getWorking().completeTask();
+        setNotification('✓ Задача завершена');
+      } else if (subcommand === 'show') {
+        const task = memoryManager.getWorking().getTask();
+        if (!task) {
+          setNotification('Нет активной задачи');
+          return true;
+        }
+
+        let output = '\n🎯 АКТИВНАЯ ЗАДАЧА:\n\n';
+        output += `Описание: ${task.description}\n`;
+        output += `Статус: ${task.status}\n`;
+        output += `Начата: ${task.startedAt}\n`;
+        output += `Контекст: ${JSON.stringify(task.context, null, 2)}\n`;
+
+        setNotification(output);
+      } else {
+        setNotification('Неизвестная подкоманда. Используйте: start, context, done, show');
+      }
+
+      return true;
+    }
+
+    // Remember command
+    if (trimmed.startsWith('/remember ')) {
+      const content = trimmed.substring(10).trim(); // Remove "/remember "
+
+      if (!content) {
+        setNotification('Использование: /remember <что запомнить>');
+        return true;
+      }
+
+      const fact = {
+        id: `fact-${Date.now()}`,
+        content,
+        addedAt: new Date().toISOString(),
+        relevance: 'high' as const,
+      };
+
+      await conversation.getMemoryManager().getLongTerm().addKnowledge(fact);
+      setNotification(`✓ Сохранено в долговременную память: "${content}"`);
+      return true;
+    }
+
+    // Memory command
+    if (trimmed.startsWith('/memory')) {
+      const parts = trimmed.split(' ').filter(Boolean);
+
+      if (parts.length === 1) {
+        // Show all memory
+        const context = conversation.getMemoryManager().getContextForPrompt();
+
+        let output = '\n=== ПАМЯТЬ АГЕНТА ===\n\n';
+
+        output += '📝 КРАТКОСРОЧНАЯ ПАМЯТЬ (Short-term):\n';
+        output += `  Сообщений: ${context.shortTerm.length}\n\n`;
+
+        output += '🎯 РАБОЧАЯ ПАМЯТЬ (Working):\n';
+        if (context.working) {
+          output += `  Задача: ${context.working.description}\n`;
+          output += `  Статус: ${context.working.status}\n`;
+        } else {
+          output += '  Нет активной задачи\n';
+        }
+        output += '\n';
+
+        output += '💾 ДОЛГОВРЕМЕННАЯ ПАМЯТЬ (Long-term):\n';
+        output += `  Профиль:\n`;
+        output += `    Стек: ${context.longTerm.profile.preferences.stack.join(', ') || 'не задан'}\n`;
+        output += `    Тон: ${context.longTerm.profile.style.tone}\n`;
+        output += `  Ограничения:\n`;
+        output += `    Запрещено: ${context.longTerm.constraints.forbidden.join(', ') || 'нет'}\n`;
+        output += `    Требуется: ${context.longTerm.constraints.required.join(', ') || 'нет'}\n`;
+        output += `  Знания: ${context.longTerm.knowledge.length} фактов\n`;
+
+        setNotification(output);
+        return true;
+      }
+
+      const subcommand = parts[1];
+
+      if (subcommand === 'short' || subcommand === 'working' || subcommand === 'long') {
+        const context = conversation.getMemoryManager().getContextForPrompt();
+        let output = '';
+
+        if (subcommand === 'short') {
+          output = '\n📝 КРАТКОСРОЧНАЯ ПАМЯТЬ:\n\n';
+          context.shortTerm.forEach((msg, i) => {
+            output += `[${i + 1}] ${msg.role}: ${msg.content.substring(0, 60)}...\n`;
+          });
+        } else if (subcommand === 'working') {
+          output = '\n🎯 РАБОЧАЯ ПАМЯТЬ:\n\n';
+          if (context.working) {
+            output += `Задача: ${context.working.description}\n`;
+            output += `Статус: ${context.working.status}\n`;
+            output += `Контекст: ${JSON.stringify(context.working.context, null, 2)}\n`;
+          } else {
+            output += 'Нет активной задачи\n';
+          }
+        } else if (subcommand === 'long') {
+          output = '\n💾 ДОЛГОВРЕМЕННАЯ ПАМЯТЬ:\n\n';
+          output += 'Профиль:\n';
+          output += JSON.stringify(context.longTerm.profile, null, 2) + '\n\n';
+          output += 'Ограничения:\n';
+          output += JSON.stringify(context.longTerm.constraints, null, 2) + '\n\n';
+          output += `Знания (${context.longTerm.knowledge.length} фактов):\n`;
+          context.longTerm.knowledge.forEach(fact => {
+            output += `- [${fact.relevance}] ${fact.content}\n`;
+          });
+        }
+
+        setNotification(output);
+        return true;
+      }
+
+      if (parts[1] === 'clear' && parts[2]) {
+        const layer = parts[2] as 'short' | 'working' | 'long';
+        await conversation.getMemoryManager().clear(layer);
+        setNotification(`✓ Слой памяти "${layer}" очищен`);
+        return true;
+      }
+
+      setNotification('Использование: /memory [short|working|long] или /memory clear <слой>');
+      return true;
+    }
+
+    return false;
+  }
+
+  const switchStrategy = async (num: number) => {
+    try {
+      const strategyConfig = configManager.getStrategyConfig();
+      let newStrategy;
+
+      switch (num) {
+        case 1:
+          newStrategy = new SlidingWindowStrategy(strategyConfig.slidingWindow.size);
+          break;
+        case 2:
+          newStrategy = new StickyFactsStrategy(
+            strategyConfig.stickyFacts.windowSize,
+            strategyConfig.stickyFacts.extractionModel || null
+          );
+          break;
+        case 3:
+          newStrategy = new BranchingStrategy(strategyConfig.branching.maxCheckpoints);
+          break;
+        default:
+          setNotification('⚠ Неверный номер стратегии. Используйте 1, 2 или 3.');
+          return;
+      }
+
+      setNotification(`Переключение на ${newStrategy.getName()}...`);
+
+      conversation.setStrategy(newStrategy);
+
+      setNotification(`✓ Переключено на ${newStrategy.getName()}`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setNotification(`⚠ Не удалось переключить стратегию: ${errorMessage}`);
+    }
+  };
+
+  useInput(async (inputChar: string, key: Key) => {
+    if (isLoading) return;
+
+    if (key.return) {
+      if (input.trim()) {
+        const userInput = input.trim();
+        setInput('');
+        setNotification(null);
+        setLastResponseMetrics(null);
+
+        if (await handleCommand(userInput)) return;
+
+        setError(null);
+        await conversation.addUserMessage(userInput);
+        setMessages(conversation.getHistory());
+        setIsLoading(true);
+
+        try {
+          // Check if summarization is needed before processing
+          if (conversation.needsSummarization()) {
+            await performSummarization(false);
+          }
+
+          // Build system prompt with memory context
+          const basePrompt = buildSystemPrompt(activeSkills);
+          const systemPrompt = conversation.buildSystemPromptWithMemory(basePrompt);
+          const apiMessages = await conversation.getMessagesForAPI();
+
+          const apiResponse = await sendMessage(
+            apiMessages,
+            currentModel,
+            systemPrompt,
+            temperature
+          );
+
+          // Сохраняем метрики последнего ответа
+          setLastResponseMetrics({
+            responseTime: apiResponse.responseTime,
+            usage: apiResponse.usage,
+          });
+
+          // Создаем metadata для сохранения
+          const metadata: MessageMetadata = {
+            usage: apiResponse.usage,
+            responseTime: apiResponse.responseTime,
+            cost: apiResponse.usage
+              ? modelRegistry.calculateCost(currentModel, apiResponse.usage)
+              : undefined,
+            model: currentModel,
+            timestamp: new Date().toISOString(),
+          };
+
+          // Обновляем статистику сессии (если есть usage)
+          let newStats = sessionStats;
+          if (apiResponse.usage) {
+            const usage = apiResponse.usage;
+            newStats = {
+              totalTokens: sessionStats.totalTokens + usage.total_tokens,
+              totalPromptTokens: sessionStats.totalPromptTokens + usage.prompt_tokens,
+              totalCompletionTokens: sessionStats.totalCompletionTokens + usage.completion_tokens,
+              totalCost: sessionStats.totalCost + modelRegistry.calculateCost(currentModel, usage),
+              requestCount: sessionStats.requestCount + 1,
+            };
+            setSessionStats(newStats);
+          }
+
+          await conversation.addAssistantMessage(apiResponse.content, metadata);
+          setMessages(conversation.getHistory());
+
+          // Save to short-term memory
+          await conversation.getMemoryManager().getShortTerm().save();
+
+          // Check if summarization will be needed for next request
+          const summaryConfig = configManager.getSummarizationConfig();
+          if (checkContextThreshold(conversation, currentModel, modelRegistry, summaryConfig.threshold)) {
+            conversation.setNeedsSummarization(true);
+          }
+
+          // Auto-save session after assistant response
+          conversation.saveSession(newStats);
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка';
+          setError(errorMessage);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    } else if (key.backspace || key.delete) {
+      setInput((prev) => prev.slice(0, -1));
+    } else if (!key.ctrl && !key.meta && inputChar) {
+      setInput((prev) => prev + inputChar);
+    }
+  });
+
+  // Initialize memory manager on app start
+  useEffect(() => {
+    conversation.initialize().catch(err => {
+      console.error('Failed to initialize memory:', err);
+    });
+  }, []);
+
+  // Handle graceful shutdown on Ctrl+C
+  useEffect(() => {
+    const handleExit = () => {
+      try {
+        // Save session before exit
+        conversation.saveSession(sessionStats);
+        console.log('\nСессия сохранена. До встречи!');
+      } catch (error) {
+        console.error('\nОшибка при сохранении:', error);
+      } finally {
+        process.exit(0);
+      }
+    };
+
+    process.on('SIGINT', handleExit);
+
+    return () => {
+      process.off('SIGINT', handleExit);
+    };
+  }, [conversation, sessionStats]);
+
+  return (
+    <Box flexDirection="column" padding={1}>
+      <Box flexDirection="column" marginBottom={1}>
+        <Text bold color="cyan">
+          CLI Агент (Ctrl+C для выхода)
+        </Text>
+        <Text dimColor>
+          Модель: {currentModel} | Temperature: {temperature}
+        </Text>
+        <Text dimColor>
+          Skills: {activeSkills.length > 0 ? activeSkills.join(', ') : 'нет'}{' '}
+          <Text color="yellow">(/skill interview brief summarize | /skill off | /skills)</Text>
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/temperature [0-2]</Text> - установить temperature
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/model</Text> - управление моделями | <Text color="yellow">/model add/remove</Text>
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/clear</Text> - очистить контекст и статистику
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/compact</Text> - выполнить суммаризацию контекста
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/resume</Text> - восстановить сохраненную сессию
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/stats</Text> - показать историю запросов с метриками
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/strategy</Text> - управление стратегиями контекста | <Text color="yellow">/strategy [1-3]</Text>
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/checkpoint</Text> - сохранить точку в истории для создания веток
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/branch new &lt;имя&gt;</Text> - создать ветку для исследования альтернатив
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/branch list</Text> - список веток | <Text color="yellow">/branch [номер]</Text> - переключиться | <Text color="yellow">/branch main</Text> - вернуться
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/facts</Text> - показать извлечённые факты (Sticky Facts)
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/memory</Text> - показать память агента | <Text color="yellow">/memory [short|working|long]</Text> - слой
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/remember &lt;текст&gt;</Text> - запомнить факт | <Text color="yellow">/task start/done</Text> - задачи
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/profile set/show</Text> - профиль | <Text color="yellow">/constraint add/remove/list</Text> - ограничения
+        </Text>
+        <Text dimColor color="gray">
+          💡 Branching: /checkpoint → /branch new → исследуйте вариант → /branch main
+        </Text>
+      </Box>
+
+      <Box flexDirection="column" marginBottom={1}>
+        {messages.map((msg, idx) => (
+          <Box key={idx} marginBottom={1}>
+            <Text bold color={msg.role === 'user' ? 'green' : 'blue'}>
+              {msg.role === 'user' ? 'User' : 'Assistant'}:{' '}
+            </Text>
+            <Text>{msg.content}</Text>
+          </Box>
+        ))}
+        {isLoading && (
+          <Box>
+            <Text bold color="blue">
+              Assistant:{' '}
+            </Text>
+            <Text dimColor>[загрузка...]</Text>
+          </Box>
+        )}
+      </Box>
+
+      {lastResponseMetrics && (
+        <Box flexDirection="column" marginBottom={1}>
+          <Text dimColor>
+            ⏱ {lastResponseMetrics.responseTime.toFixed(2)}s | 📊{' '}
+            {lastResponseMetrics.usage
+              ? `${lastResponseMetrics.usage.total_tokens} tokens (prompt: ${lastResponseMetrics.usage.prompt_tokens}, completion: ${lastResponseMetrics.usage.completion_tokens})`
+              : 'N/A tokens'
+            } | 💰{' '}
+            {lastResponseMetrics.usage
+              ? `$${modelRegistry.calculateCost(currentModel, lastResponseMetrics.usage).toFixed(6)}`
+              : 'N/A'
+            }
+          </Text>
+          <Text dimColor>
+            📈 Session total:{' '}
+            {sessionStats.requestCount > 0 && sessionStats.totalTokens > 0
+              ? `${sessionStats.totalTokens} tokens | $${sessionStats.totalCost.toFixed(6)}`
+              : 'N/A tokens | N/A'
+            }
+          </Text>
+        </Box>
+      )}
+
+      {sessionStats.totalPromptTokens > 0 && (() => {
+        const contextWarning = getContextWarning(sessionStats.totalPromptTokens, currentModel, modelRegistry);
+        const hasSummary = conversation.getSummary() !== null;
+        const summaryIndicator = hasSummary ? ' [S]' : '';
+        return (
+          <Box marginBottom={1}>
+            <Text
+              color={
+                contextWarning.level === 'critical'
+                  ? 'red'
+                  : contextWarning.level === 'warning'
+                  ? 'yellow'
+                  : 'gray'
+              }
+            >
+              {contextWarning.message}{summaryIndicator}
+            </Text>
+          </Box>
+        );
+      })()}
+
+      {notification && (
+        <Box marginBottom={1}>
+          <Text color="cyan">{notification}</Text>
+        </Box>
+      )}
+
+      {error && (
+        <Box marginBottom={1}>
+          <Text color="red">Ошибка: {error}</Text>
+        </Box>
+      )}
+
+      <Box>
+        <Text color="yellow">&gt; </Text>
+        <Text>{input}</Text>
+        <Text backgroundColor="white"> </Text>
+      </Box>
+    </Box>
+  );
+};
