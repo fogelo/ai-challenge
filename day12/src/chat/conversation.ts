@@ -168,9 +168,45 @@ export class Conversation {
 
   buildSystemPromptWithMemory(basePrompt?: string): string {
     const context = this.memoryManager.getContextForPrompt();
+    const profile = this.memoryManager.getProfileManager().getActiveProfile();
     let prompt = basePrompt || 'Ты полезный AI ассистент.\n\n';
 
-    // Add profile
+    // Add profile personalization
+    if (profile) {
+      prompt += '=== ПЕРСОНАЛИЗАЦИЯ ===\n';
+      prompt += `Стиль ответов: ${profile.responseStyle}\n`;
+      prompt += `Тон: ${profile.tone}\n`;
+      prompt += `Примеры кода: ${profile.includeCodeExamples ? 'включать' : 'не включать'}\n`;
+      prompt += `Уровень детализации: ${profile.detailLevel}\n`;
+      prompt += `Контекст работы: ${profile.context.purpose}\n`;
+
+      if (profile.stack.length > 0) {
+        prompt += `Технологический стек: ${profile.stack.join(', ')}\n`;
+      }
+
+      if (profile.preferredLanguage) {
+        prompt += `Предпочитаемый язык: ${profile.preferredLanguage}\n`;
+      }
+
+      // Add constraints
+      if (profile.constraints.forbidden.length > 0) {
+        prompt += `\nЗАПРЕЩЕНО: ${profile.constraints.forbidden.join(', ')}\n`;
+      }
+
+      if (profile.constraints.required.length > 0) {
+        prompt += `ОБЯЗАТЕЛЬНО: ${profile.constraints.required.join(', ')}\n`;
+      }
+
+      if (profile.constraints.rules.length > 0) {
+        prompt += '\nПРАВИЛА:\n';
+        profile.constraints.rules.forEach(rule => {
+          prompt += `- ${rule}\n`;
+        });
+      }
+      prompt += '\n';
+    }
+
+    // Add profile from memory context (legacy)
     if (context.longTerm.profile.preferences.stack.length > 0) {
       prompt += `# Профиль пользователя\n`;
       prompt += `Предпочитаемый стек: ${context.longTerm.profile.preferences.stack.join(', ')}\n`;
