@@ -188,6 +188,84 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     }
   }
 
+  // Function to automatically send a message to the agent
+  async function sendAutoMessage(message: string) {
+    setError(null);
+    await conversation.addUserMessage(message);
+    setMessages(conversation.getHistory());
+    setIsLoading(true);
+
+    try {
+      // Check if summarization is needed before processing
+      if (conversation.needsSummarization()) {
+        await performSummarization(false);
+      }
+
+      // Build system prompt with memory context
+      const basePrompt = buildSystemPrompt(activeSkills);
+      const systemPrompt = conversation.buildSystemPromptWithMemory(basePrompt);
+      const apiMessages = await conversation.getMessagesForAPI();
+
+      const apiResponse = await sendMessage(
+        apiMessages,
+        currentModel,
+        systemPrompt,
+        temperature
+      );
+
+      // Сохраняем метрики последнего ответа
+      setLastResponseMetrics({
+        responseTime: apiResponse.responseTime,
+        usage: apiResponse.usage,
+      });
+
+      // Создаем metadata для сохранения
+      const metadata: MessageMetadata = {
+        usage: apiResponse.usage,
+        responseTime: apiResponse.responseTime,
+        cost: apiResponse.usage
+          ? modelRegistry.calculateCost(currentModel, apiResponse.usage)
+          : undefined,
+        model: currentModel,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Обновляем статистику сессии (если есть usage)
+      let newStats = sessionStats;
+      if (apiResponse.usage) {
+        const usage = apiResponse.usage;
+        newStats = {
+          totalTokens: sessionStats.totalTokens + usage.total_tokens,
+          totalPromptTokens: sessionStats.totalPromptTokens + usage.prompt_tokens,
+          totalCompletionTokens: sessionStats.totalCompletionTokens + usage.completion_tokens,
+          totalCost: sessionStats.totalCost + modelRegistry.calculateCost(currentModel, usage),
+          requestCount: sessionStats.requestCount + 1,
+        };
+        setSessionStats(newStats);
+      }
+
+      await conversation.addAssistantMessage(apiResponse.content, metadata);
+      setMessages(conversation.getHistory());
+
+      // Save to short-term memory
+      await conversation.getMemoryManager().getShortTerm().save();
+
+      // Check if summarization will be needed for next request
+      const summaryConfig = configManager.getSummarizationConfig();
+      if (checkContextThreshold(conversation, currentModel, modelRegistry, summaryConfig.threshold)) {
+        conversation.setNeedsSummarization(true);
+      }
+
+      // Auto-save session after assistant response
+      conversation.saveSession(newStats);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка';
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function handleCommand(rawInput: string): Promise<boolean> {
     const trimmed = rawInput.trim();
 
@@ -703,9 +781,12 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       if (success) {
         const indicator = STATE_INDICATORS[nextState];
         setNotification(
-          `✅ Переход: ${currentState.toUpperCase()} → ${nextState.toUpperCase()} ${indicator}\n` +
-          `${STATE_INSTRUCTIONS[nextState]}`
+          `✅ Переход: ${currentState.toUpperCase()} → ${nextState.toUpperCase()} ${indicator}`
         );
+
+        // Automatically trigger agent to start working on the new stage
+        const transitionMessage = `Переходим к этапу ${nextState.toUpperCase()}. ${STATE_INSTRUCTIONS[nextState]}`;
+        await sendAutoMessage(transitionMessage);
       } else {
         setNotification('❌ Не удалось выполнить переход');
       }
