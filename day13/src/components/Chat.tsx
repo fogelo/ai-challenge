@@ -1398,7 +1398,13 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           <Text color="yellow">/memory</Text> - показать память агента | <Text color="yellow">/memory [short|working|long]</Text> - слой
         </Text>
         <Text dimColor>
-          <Text color="yellow">/remember &lt;текст&gt;</Text> - запомнить факт | <Text color="yellow">/task start/done</Text> - задачи
+          <Text color="yellow">/remember &lt;текст&gt;</Text> - запомнить факт
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/task</Text> - показать текущую задачу | <Text color="yellow">/task new/list/load</Text> - управление задачами
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/next</Text> - перейти к следующему этапу задачи (PLANNING → EXECUTION → VALIDATION → DONE)
         </Text>
         <Text dimColor>
           <Text color="yellow">/profile show/list/create</Text> - управление профилями | <Text color="yellow">/profile switch/delete</Text>
