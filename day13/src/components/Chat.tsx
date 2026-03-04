@@ -523,7 +523,15 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       sessions.forEach((session, index) => {
         const createdDate = new Date(session.createdAt).toLocaleString('ru-RU');
         const updatedDate = new Date(session.updatedAt).toLocaleString('ru-RU');
-        output += `${index + 1}. ${session.fileName}\n`;
+
+        // Show task state if available
+        let taskInfo = '';
+        if (session.taskState && session.taskDescription) {
+          const indicator = STATE_INDICATORS[session.taskState as TaskState];
+          taskInfo = ` [${session.taskState.toUpperCase()} ${indicator}]`;
+        }
+
+        output += `${index + 1}. ${session.fileName}${taskInfo}\n`;
         output += `   ID: ${session.id}\n`;
         output += `   Создана: ${createdDate}\n`;
         output += `   Обновлена: ${updatedDate}\n`;
