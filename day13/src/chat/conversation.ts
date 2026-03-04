@@ -81,6 +81,8 @@ export class Conversation {
   }
 
   saveSession(stats: SessionStats): void {
+    const currentTask = this.memoryManager.getTaskStateMachine().getCurrentTask();
+
     const data: SessionData = {
       id: this.currentSessionId,
       createdAt: new Date().toISOString(), // Will be overwritten by actual createdAt on load
@@ -90,6 +92,7 @@ export class Conversation {
       needsSummarization: this.needsSummarizationFlag,
       stats: stats,
       strategyState: this.strategy.serialize(),
+      taskStateId: currentTask?.taskId,
     };
 
     this.sessionManager.saveSession(this.currentSessionId, data);
@@ -111,6 +114,11 @@ export class Conversation {
     // Restore strategy if available
     if (data.strategyState) {
       this.strategy = this.createStrategyFromState(data.strategyState);
+    }
+
+    // Restore task state
+    if (data.taskStateId) {
+      this.memoryManager.getTaskStateMachine().load(data.taskStateId);
     }
 
     return { success: true, stats: data.stats };
