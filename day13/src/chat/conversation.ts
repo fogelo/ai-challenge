@@ -217,6 +217,12 @@ export class Conversation {
       prompt += `Тон: ${context.longTerm.profile.style.tone}\n\n`;
     }
 
+    // Task state prompt injection
+    const taskStatePrompt = this.memoryManager.getTaskStateMachine().getStatePrompt();
+    if (taskStatePrompt) {
+      prompt += taskStatePrompt + '\n';
+    }
+
     // Add constraints
     const constraints = context.longTerm.constraints;
     if (constraints.forbidden.length > 0 || constraints.required.length > 0 || constraints.rules.length > 0) {
