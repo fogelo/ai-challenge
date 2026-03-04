@@ -166,6 +166,7 @@ export interface SessionData {
   needsSummarization?: boolean;
   stats: SessionStats;
   strategyState?: StrategyState;
+  taskStateId?: string;
 }
 
 /**
