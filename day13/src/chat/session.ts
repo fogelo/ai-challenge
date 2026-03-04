@@ -153,7 +153,7 @@ export class SessionManager {
             return null;
           }
         })
-        .filter((session): session is SessionMetadata => session !== null);
+        .filter((session): session is NonNullable<typeof session> => session !== null);
 
       // Sort by creation date, newest first
       sessions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
