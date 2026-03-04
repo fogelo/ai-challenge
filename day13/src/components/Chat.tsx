@@ -14,7 +14,7 @@ import {
   BranchingStrategy,
 } from '../strategies/index.js';
 import { InterviewFlow } from '../profile/index.js';
-import { STATE_INDICATORS } from '../taskstate/index.js';
+import { STATE_INDICATORS, ALLOWED_TRANSITIONS, STATE_INSTRUCTIONS, TaskState } from '../taskstate/index.js';
 
 interface ChatProps {
   modelRegistry: ModelRegistry;
@@ -573,6 +573,101 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         `Создана: ${new Date(targetSession.createdAt).toLocaleString('ru-RU')}`
       );
       return true;
+    }
+
+    // Task commands
+    if (trimmed.startsWith('/task')) {
+      const args = trimmed.slice(6).trim();
+
+      // /task (show current task)
+      if (!args) {
+        const task = conversation.getMemoryManager().getTaskStateMachine().getCurrentTask();
+        if (!task) {
+          setNotification('📋 Нет активной задачи. Начните новую задачу, отправив сообщение.');
+        } else {
+          const indicator = STATE_INDICATORS[task.currentState];
+          const history = task.stateHistory.map(t => `${t.from} → ${t.to}`).join(' → ');
+          const created = new Date(task.startedAt).toLocaleString('ru-RU');
+
+          setNotification(
+            `📋 Текущая задача:\n` +
+            `Описание: ${task.description}\n` +
+            `Состояние: ${task.currentState.toUpperCase()} ${indicator}\n` +
+            `Создана: ${created}\n` +
+            `История: ${history}`
+          );
+        }
+        return true;
+      }
+
+      // /task new <description>
+      if (args.startsWith('new ')) {
+        const description = args.slice(4).trim();
+        if (!description) {
+          setNotification('❌ Укажите описание задачи: /task new <описание>');
+          return true;
+        }
+
+        const taskMachine = conversation.getMemoryManager().getTaskStateMachine();
+        const task = taskMachine.createTask(description);
+
+        setNotification(
+          `✅ Создана новая задача [ID: ${task.taskId}]\n` +
+          `Описание: ${description}\n` +
+          `Состояние: PLANNING 🟡`
+        );
+        return true;
+      }
+
+      // /task list
+      if (args === 'list') {
+        const tasks = conversation.getMemoryManager().getTaskStateMachine().listTasks();
+
+        if (tasks.length === 0) {
+          setNotification('📋 Нет сохраненных задач.');
+        } else {
+          const taskList = tasks.map((t, idx) => {
+            const indicator = STATE_INDICATORS[t.state];
+            const updated = new Date(t.updatedAt).toLocaleString('ru-RU');
+            return `${idx + 1}. ${t.description.slice(0, 50)}${t.description.length > 50 ? '...' : ''} [${t.state.toUpperCase()} ${indicator}] - ${updated}`;
+          }).join('\n');
+
+          setNotification(`📋 Задачи:\n${taskList}`);
+        }
+        return true;
+      }
+
+      // /task load <number>
+      if (args.startsWith('load ')) {
+        const numStr = args.slice(5).trim();
+        const num = parseInt(numStr, 10);
+
+        if (isNaN(num) || num < 1) {
+          setNotification('❌ Укажите номер задачи: /task load <номер>');
+          return true;
+        }
+
+        const tasks = conversation.getMemoryManager().getTaskStateMachine().listTasks();
+        if (num > tasks.length) {
+          setNotification(`❌ Задача #${num} не найдена. Всего задач: ${tasks.length}`);
+          return true;
+        }
+
+        const task = tasks[num - 1];
+        const loaded = conversation.getMemoryManager().getTaskStateMachine().load(task.taskId);
+
+        if (loaded) {
+          const indicator = STATE_INDICATORS[task.state];
+          setNotification(
+            `✅ Загружена задача: ${task.description}\n` +
+            `Состояние: ${task.state.toUpperCase()} ${indicator}\n` +
+            `Продолжаем работу...`
+          );
+        } else {
+          setNotification('❌ Не удалось загрузить задачу');
+        }
+        return true;
+      }
     }
 
     // Stats command
