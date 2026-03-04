@@ -178,6 +178,8 @@ export interface SessionMetadata {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  taskState?: string;
+  taskDescription?: string;
 }
 
 /**
