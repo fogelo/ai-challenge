@@ -14,6 +14,7 @@ import {
   BranchingStrategy,
 } from '../strategies/index.js';
 import { InterviewFlow } from '../profile/index.js';
+import { STATE_INDICATORS } from '../taskstate/index.js';
 
 interface ChatProps {
   modelRegistry: ModelRegistry;
@@ -90,6 +91,16 @@ function calculateTokenSavings(
   const savings = Math.round(((original - compressed) / original) * 100);
 
   return { original, compressed, savings };
+}
+
+function getTaskStateDisplay(conversation: Conversation): string {
+  const taskMachine = conversation.getMemoryManager().getTaskStateMachine();
+  const task = taskMachine.getCurrentTask();
+
+  if (!task) return '';
+
+  const indicator = STATE_INDICATORS[task.currentState];
+  return `[State: ${task.currentState.toUpperCase()}] ${indicator}`;
 }
 
 export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
@@ -1326,6 +1337,12 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         <Box marginBottom={1}>
           <Text color="red">Ошибка: {error}</Text>
         </Box>
+      )}
+
+      {getTaskStateDisplay(conversation) && (
+        <Text color="cyan">
+          {getTaskStateDisplay(conversation)}
+        </Text>
       )}
 
       <Box>
