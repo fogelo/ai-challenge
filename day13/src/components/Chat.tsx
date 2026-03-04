@@ -1194,6 +1194,15 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
         if (await handleCommand(userInput)) return;
 
+        // Auto-create task if none exists
+        const taskMachine = conversation.getMemoryManager().getTaskStateMachine();
+        let currentTask = taskMachine.getCurrentTask();
+
+        if (!currentTask) {
+          currentTask = taskMachine.createTask(userInput);
+          setNotification('📋 Создана новая задача\nСостояние: PLANNING 🟡\nНачинаем планирование...');
+        }
+
         setError(null);
         await conversation.addUserMessage(userInput);
         setMessages(conversation.getHistory());
