@@ -670,6 +670,41 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       }
     }
 
+    // Next command - manual state transition
+    if (trimmed === '/next') {
+      const taskMachine = conversation.getMemoryManager().getTaskStateMachine();
+      const task = taskMachine.getCurrentTask();
+
+      if (!task) {
+        setNotification('❌ Нет активной задачи');
+        return true;
+      }
+
+      const currentState = task.currentState;
+      const allowedStates = ALLOWED_TRANSITIONS[currentState];
+
+      if (allowedStates.length === 0) {
+        setNotification('✅ Задача уже в финальном состоянии DONE 🟢');
+        return true;
+      }
+
+      // Transition to first allowed state
+      const nextState = allowedStates[0];
+      const success = taskMachine.transition(nextState, 'Manual transition via /next');
+
+      if (success) {
+        const indicator = STATE_INDICATORS[nextState];
+        setNotification(
+          `✅ Переход: ${currentState.toUpperCase()} → ${nextState.toUpperCase()} ${indicator}\n` +
+          `${STATE_INSTRUCTIONS[nextState]}`
+        );
+      } else {
+        setNotification('❌ Не удалось выполнить переход');
+      }
+
+      return true;
+    }
+
     // Stats command
     if (trimmed === '/stats') {
       const history = conversation.getHistory();
