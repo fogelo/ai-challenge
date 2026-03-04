@@ -121,12 +121,32 @@ export class SessionManager {
             const content = fs.readFileSync(filePath, 'utf-8');
             const data = JSON.parse(content) as SessionData;
 
+            let taskState: string | undefined;
+            let taskDescription: string | undefined;
+
+            // Read task state if available
+            if (data.taskStateId) {
+              try {
+                const taskPath = path.join('.task-state', `${data.taskStateId}.json`);
+                if (fs.existsSync(taskPath)) {
+                  const taskContent = fs.readFileSync(taskPath, 'utf-8');
+                  const task = JSON.parse(taskContent);
+                  taskState = task.currentState;
+                  taskDescription = task.description;
+                }
+              } catch {
+                // Ignore task read errors
+              }
+            }
+
             return {
               id: data.id,
               fileName: fileName,
               createdAt: data.createdAt,
               updatedAt: data.updatedAt,
               messageCount: data.messages.length,
+              taskState,
+              taskDescription,
             };
           } catch (error) {
             console.error(`Error reading session file ${fileName}:`, error);
