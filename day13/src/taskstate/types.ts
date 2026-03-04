@@ -38,8 +38,8 @@ export interface TaskContext {
  */
 export const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
   [TaskState.PLANNING]: [TaskState.EXECUTION],
-  [TaskState.EXECUTION]: [TaskState.PLANNING, TaskState.VALIDATION],
-  [TaskState.VALIDATION]: [TaskState.EXECUTION, TaskState.DONE],
+  [TaskState.EXECUTION]: [TaskState.VALIDATION, TaskState.PLANNING],
+  [TaskState.VALIDATION]: [TaskState.DONE, TaskState.EXECUTION],
   [TaskState.DONE]: [],
 };
 
