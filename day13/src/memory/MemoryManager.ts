@@ -3,18 +3,21 @@ import { WorkingMemory } from './WorkingMemory.js';
 import { LongTermMemory } from './LongTermMemory.js';
 import { MemoryContext, MemoryLayer } from './types.js';
 import { ProfileManager } from '../profile/index.js';
+import { TaskStateMachine } from '../taskstate/index.js';
 
 export class MemoryManager {
   private shortTerm: ShortTermMemory;
   private working: WorkingMemory;
   private longTerm: LongTermMemory;
   private profileManager: ProfileManager;
+  private taskStateMachine: TaskStateMachine;
 
   constructor(baseDir: string = '.memory') {
     this.shortTerm = new ShortTermMemory(`${baseDir}/short-term`);
     this.working = new WorkingMemory(`${baseDir}/working`);
     this.longTerm = new LongTermMemory(`${baseDir}/long-term`);
     this.profileManager = new ProfileManager(`${baseDir}/profiles`);
+    this.taskStateMachine = new TaskStateMachine('.task-state');
   }
 
   async initialize(): Promise<void> {
@@ -103,5 +106,9 @@ export class MemoryManager {
     }
 
     return success;
+  }
+
+  getTaskStateMachine(): TaskStateMachine {
+    return this.taskStateMachine;
   }
 }
