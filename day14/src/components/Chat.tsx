@@ -216,8 +216,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         await performSummarization(false);
       }
 
-      // Build system prompt with memory context
-      const basePrompt = buildSystemPrompt(activeSkills);
+      // Build system prompt with memory context and invariants
+      const formattedInvariants = invariantManager.getFormattedInvariants();
+      const basePrompt = buildSystemPrompt(activeSkills, formattedInvariants);
       const systemPrompt = conversation.buildSystemPromptWithMemory(basePrompt);
       const apiMessages = await conversation.getMessagesForAPI();
 
@@ -227,6 +228,26 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         systemPrompt,
         temperature
       );
+
+      // Валидация ответа на соответствие инвариантам
+      if (invariantsLoaded) {
+        const validation = await invariantManager.validate(
+          apiResponse.content,
+          currentModel
+        );
+
+        if (!validation.valid) {
+          // Показываем ошибку вместо ответа
+          const errorMessage = invariantManager.formatViolationMessage(validation);
+          const errorMetadata: MessageMetadata = {
+            timestamp: new Date().toISOString(),
+            model: currentModel,
+          };
+          await conversation.addAssistantMessage(errorMessage, errorMetadata);
+          setMessages(conversation.getHistory());
+          return;
+        }
+      }
 
       // Сохраняем метрики последнего ответа
       setLastResponseMetrics({
@@ -1249,8 +1270,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             await performSummarization(false);
           }
 
-          // Build system prompt with memory context
-          const basePrompt = buildSystemPrompt(activeSkills);
+          // Build system prompt with memory context and invariants
+          const formattedInvariants = invariantManager.getFormattedInvariants();
+          const basePrompt = buildSystemPrompt(activeSkills, formattedInvariants);
           const systemPrompt = conversation.buildSystemPromptWithMemory(basePrompt);
           const apiMessages = await conversation.getMessagesForAPI();
 
@@ -1260,6 +1282,26 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             systemPrompt,
             temperature
           );
+
+          // Валидация ответа на соответствие инвариантам
+          if (invariantsLoaded) {
+            const validation = await invariantManager.validate(
+              apiResponse.content,
+              currentModel
+            );
+
+            if (!validation.valid) {
+              // Показываем ошибку вместо ответа
+              const errorMessage = invariantManager.formatViolationMessage(validation);
+              const errorMetadata: MessageMetadata = {
+                timestamp: new Date().toISOString(),
+                model: currentModel,
+              };
+              await conversation.addAssistantMessage(errorMessage, errorMetadata);
+              setMessages(conversation.getHistory());
+              return;
+            }
+          }
 
           // Сохраняем метрики последнего ответа
           setLastResponseMetrics({
