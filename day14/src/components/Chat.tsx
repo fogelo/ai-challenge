@@ -116,6 +116,83 @@ function getTaskStateDisplay(conversation: Conversation): string {
   return `[State: ${task.currentState.toUpperCase()}] ${indicator}`;
 }
 
+async function handleInvariantsCommand(
+  args: string[],
+  invariantManager: InvariantManager,
+  setNotification: (msg: string) => void,
+  currentModel: string
+): Promise<void> {
+  const command = args[0];
+
+  if (!command) {
+    // Показать все инварианты
+    const invariants = invariantManager.getInvariants();
+    if (!invariants || Object.keys(invariants.invariants).length === 0) {
+      setNotification('Инварианты не заданы. Агент работает без ограничений.');
+      return;
+    }
+
+    let output = 'Активные инварианты:\n\n';
+    for (const [category, data] of Object.entries(invariants.invariants)) {
+      const priority = data.type === 'hard' ? 'КРИТИЧНО' : 'РЕКОМЕНДАЦИЯ';
+      output += `[${category}] ${priority}\n`;
+      output += `${data.description}\n`;
+      data.rules.forEach((rule) => {
+        output += `- ${rule}\n`;
+      });
+      output += '\n';
+    }
+    setNotification(output);
+    return;
+  }
+
+  if (command === 'reload') {
+    try {
+      await invariantManager.reload();
+      setNotification('✅ Инварианты перезагружены из файла');
+    } catch (error) {
+      setNotification(
+        `❌ Ошибка перезагрузки: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+    return;
+  }
+
+  if (command === 'test') {
+    const testText = args.slice(1).join(' ');
+    if (!testText) {
+      setNotification('Использование: /invariants test <текст для проверки>');
+      return;
+    }
+
+    try {
+      const validation = await invariantManager.validate(
+        testText,
+        currentModel
+      );
+
+      if (validation.valid) {
+        setNotification('✅ Нарушений не найдено');
+      } else {
+        const message = invariantManager.formatViolationMessage(validation);
+        setNotification(message);
+      }
+    } catch (error) {
+      setNotification(
+        `❌ Ошибка валидации: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+    return;
+  }
+
+  setNotification(
+    'Доступные команды:\n' +
+      '/invariants - показать все инварианты\n' +
+      '/invariants reload - перезагрузить из файла\n' +
+      '/invariants test <текст> - протестировать текст на нарушения'
+  );
+}
+
 export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [sessionManager] = useState(() => new SessionManager());
   const [conversation] = useState(() => new Conversation(sessionManager));
@@ -1145,6 +1222,13 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       }
 
       setNotification('Команды: /profile show | list | switch <имя> | delete <имя> | create');
+      return true;
+    }
+
+    // Invariants commands
+    if (trimmed.startsWith('/invariants')) {
+      const args = trimmed.split(' ').slice(1);
+      await handleInvariantsCommand(args, invariantManager, setNotification, currentModel);
       return true;
     }
 
