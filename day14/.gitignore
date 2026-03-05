@@ -6,3 +6,4 @@ config.json
 config.json.backup
 .chat-history/
 .memory/
+.invariants/
