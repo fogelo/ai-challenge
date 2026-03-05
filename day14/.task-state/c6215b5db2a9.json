@@ -1,0 +1,38 @@
+{
+  "taskId": "c6215b5db2a9",
+  "description": "task load 1",
+  "currentState": "planning",
+  "startedAt": "2026-03-04T17:12:06.173Z",
+  "updatedAt": "2026-03-04T17:16:48.332Z",
+  "stateHistory": [
+    {
+      "from": "START",
+      "to": "planning",
+      "timestamp": "2026-03-04T17:12:06.173Z"
+    },
+    {
+      "from": "planning",
+      "to": "execution",
+      "timestamp": "2026-03-04T17:16:04.986Z",
+      "reason": "Manual transition via /next"
+    },
+    {
+      "from": "execution",
+      "to": "planning",
+      "timestamp": "2026-03-04T17:16:38.698Z",
+      "reason": "Manual transition via /next"
+    },
+    {
+      "from": "planning",
+      "to": "execution",
+      "timestamp": "2026-03-04T17:16:45.315Z",
+      "reason": "Manual transition via /next"
+    },
+    {
+      "from": "execution",
+      "to": "planning",
+      "timestamp": "2026-03-04T17:16:48.332Z",
+      "reason": "Manual transition via /next"
+    }
+  ]
+}

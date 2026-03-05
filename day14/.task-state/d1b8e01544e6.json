@@ -1,0 +1,32 @@
+{
+  "taskId": "d1b8e01544e6",
+  "description": "простая jwt авторизация",
+  "currentState": "done",
+  "startedAt": "2026-03-04T17:40:52.710Z",
+  "updatedAt": "2026-03-04T17:44:44.722Z",
+  "stateHistory": [
+    {
+      "from": "START",
+      "to": "planning",
+      "timestamp": "2026-03-04T17:40:52.710Z"
+    },
+    {
+      "from": "planning",
+      "to": "execution",
+      "timestamp": "2026-03-04T17:42:15.317Z",
+      "reason": "Manual transition via /next"
+    },
+    {
+      "from": "execution",
+      "to": "validation",
+      "timestamp": "2026-03-04T17:43:07.874Z",
+      "reason": "Manual transition via /next"
+    },
+    {
+      "from": "validation",
+      "to": "done",
+      "timestamp": "2026-03-04T17:44:44.722Z",
+      "reason": "Manual transition via /next"
+    }
+  ]
+}

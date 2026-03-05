@@ -1,0 +1,14 @@
+{
+  "taskId": "dce41915daa3",
+  "description": "/task new",
+  "currentState": "planning",
+  "startedAt": "2026-03-04T17:11:08.470Z",
+  "updatedAt": "2026-03-04T17:11:08.470Z",
+  "stateHistory": [
+    {
+      "from": "START",
+      "to": "planning",
+      "timestamp": "2026-03-04T17:11:08.470Z"
+    }
+  ]
+}

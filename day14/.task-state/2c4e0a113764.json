@@ -1,0 +1,32 @@
+{
+  "taskId": "2c4e0a113764",
+  "description": "jwt",
+  "currentState": "done",
+  "startedAt": "2026-03-04T17:28:27.769Z",
+  "updatedAt": "2026-03-04T17:32:47.392Z",
+  "stateHistory": [
+    {
+      "from": "START",
+      "to": "planning",
+      "timestamp": "2026-03-04T17:28:27.769Z"
+    },
+    {
+      "from": "planning",
+      "to": "execution",
+      "timestamp": "2026-03-04T17:29:46.050Z",
+      "reason": "Manual transition via /next"
+    },
+    {
+      "from": "execution",
+      "to": "validation",
+      "timestamp": "2026-03-04T17:30:32.633Z",
+      "reason": "Manual transition via /next"
+    },
+    {
+      "from": "validation",
+      "to": "done",
+      "timestamp": "2026-03-04T17:32:47.392Z",
+      "reason": "Manual transition via /next"
+    }
+  ]
+}
