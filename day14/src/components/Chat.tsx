@@ -1232,6 +1232,60 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Help command
+    if (trimmed === '/help') {
+      const helpText = `
+📚 Доступные команды:
+
+🤖 Модели:
+  /model                    - список моделей
+  /model <номер>            - переключиться на модель
+  /model add <model-id>     - добавить модель в избранное
+  /model remove <номер>     - удалить модель из избранного
+
+💬 Контекст:
+  /clear                    - очистить контекст и статистику
+  /compact                  - сжать контекст вручную
+  /stats                    - показать историю запросов
+  /temperature [0-2]        - установить/показать temperature
+
+📋 Задачи:
+  /task                     - показать текущую задачу
+  /task new <описание>      - создать новую задачу
+  /task list                - список всех задач
+  /task load <номер>        - загрузить задачу
+  /next                     - перейти к следующему этапу
+
+💾 Сессии:
+  /resume                   - список сохраненных сессий
+  /resume <номер>           - загрузить сессию
+
+👤 Профили:
+  /profile show             - показать активный профиль
+  /profile list             - список всех профилей
+  /profile create           - создать новый профиль
+  /profile switch <имя>     - переключить профиль
+  /profile delete <имя>     - удалить профиль
+
+🔒 Инварианты:
+  /invariants               - показать все активные инварианты
+  /invariants reload        - перезагрузить из файла
+  /invariants test <текст>  - протестировать текст на нарушения
+
+🎯 Skills:
+  /skills                   - показать активные skills
+  /skill <name1> <name2>    - активировать skills
+  /skill off                - отключить все skills
+
+📊 Стратегии:
+  /strategy                 - показать текущую стратегию
+  /strategy <номер>         - переключить стратегию
+      `.trim();
+
+      setNotification(helpText);
+      return true;
+    }
+
     return false;
   }
 
