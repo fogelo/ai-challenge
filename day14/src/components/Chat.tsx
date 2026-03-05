@@ -15,15 +15,28 @@ import {
 } from '../strategies/index.js';
 import { InterviewFlow } from '../profile/index.js';
 import { STATE_INDICATORS, ALLOWED_TRANSITIONS, STATE_INSTRUCTIONS, TaskState } from '../taskstate/index.js';
+import { InvariantManager } from '../invariants/index.js';
 
 interface ChatProps {
   modelRegistry: ModelRegistry;
   configManager: ConfigManager;
 }
 
-function buildSystemPrompt(activeSkills: SkillName[]): string | undefined {
-  if (activeSkills.length === 0) return undefined;
-  return activeSkills.map((name) => SKILLS[name]).join('\n\n---\n\n');
+function buildSystemPrompt(
+  activeSkills: SkillName[],
+  invariants?: string | null
+): string | undefined {
+  const parts: string[] = [];
+
+  if (activeSkills.length > 0) {
+    parts.push(activeSkills.map((name) => SKILLS[name]).join('\n\n---\n\n'));
+  }
+
+  if (invariants) {
+    parts.push('\n\n' + invariants);
+  }
+
+  return parts.length > 0 ? parts.join('') : undefined;
 }
 
 function getContextWarning(
@@ -129,6 +142,8 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [interviewMode, setInterviewMode] = useState(false);
   const [interviewStep, setInterviewStep] = useState(0);
   const [interviewAnswers, setInterviewAnswers] = useState<Record<string, any>>({});
+  const [invariantManager] = useState(() => new InvariantManager('.invariants'));
+  const [invariantsLoaded, setInvariantsLoaded] = useState(false);
 
   async function performSummarization(forced: boolean = false): Promise<void> {
     const config = configManager.getSummarizationConfig();
@@ -1337,6 +1352,21 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     checkProfiles().catch(err => {
       console.error('Failed to check profiles:', err);
     });
+  }, []);
+
+  // Load invariants on startup
+  useEffect(() => {
+    const loadInvariants = async () => {
+      try {
+        await invariantManager.load();
+        setInvariantsLoaded(true);
+      } catch (error) {
+        console.error('Ошибка загрузки инвариантов:', error);
+        // Продолжаем без инвариантов
+        setInvariantsLoaded(true);
+      }
+    };
+    loadInvariants();
   }, []);
 
   // Handle graceful shutdown on Ctrl+C
