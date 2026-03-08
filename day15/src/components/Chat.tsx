@@ -1421,6 +1421,25 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             temperature
           );
 
+          // State guard: блокируем реализацию в состоянии PLANNING
+          const guardTask = conversation.getMemoryManager().getTaskStateMachine().getCurrentTask();
+          if (guardTask?.currentState === TaskState.PLANNING) {
+            const hasCode = /```[\s\S]*?```/.test(apiResponse.content);
+            if (hasCode) {
+              const guardMessage =
+                `⛔ Заблокировано: нельзя перейти к реализации в состоянии PLANNING 🟡\n\n` +
+                `Агент попытался начать выполнение до утверждения плана.\n\n` +
+                `Сначала утвердите план, затем используйте \`/next\` для перехода в EXECUTION 🔵.`;
+              const guardMetadata: MessageMetadata = {
+                timestamp: new Date().toISOString(),
+                model: currentModel,
+              };
+              await conversation.addAssistantMessage(guardMessage, guardMetadata);
+              setMessages(conversation.getHistory());
+              return;
+            }
+          }
+
           // Валидация ответа на соответствие инвариантам
           if (invariantsLoaded) {
             const validation = await invariantManager.validate(
