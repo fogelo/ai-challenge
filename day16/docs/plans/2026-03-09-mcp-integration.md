@@ -305,6 +305,98 @@ git commit -m "feat: integrate /mcp command into CLI agent"
 
 ---
 
+---
+
+### Task 4: Добавить вызов инструментов /mcp call
+
+**Files:**
+- Modify: `src/mcp/client.ts`
+- Modify: `src/components/Chat.tsx`
+
+**Step 1: Добавить метод callTool в MCPClientManager**
+
+В `src/mcp/client.ts` добавить метод после `listTools()`:
+
+```typescript
+async callTool(name: string, args: Record<string, unknown> = {}): Promise<string> {
+  if (!this.client) throw new Error('Не подключён к MCP серверу');
+
+  const result = await this.client.callTool({ name, arguments: args });
+  return result.content
+    .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+    .map((c) => c.text)
+    .join('\n');
+}
+```
+
+**Step 2: Добавить обработчик /mcp call в Chat.tsx**
+
+После блока `/mcp disconnect` добавить:
+
+```typescript
+if (trimmed.startsWith('/mcp call ')) {
+  const parts = trimmed.slice('/mcp call '.length).trim().split(' ');
+  const toolName = parts[0];
+  let args: Record<string, unknown> = {};
+
+  // Если передан второй аргумент — парсим как JSON или как message=value
+  if (parts[1]) {
+    try {
+      args = JSON.parse(parts.slice(1).join(' '));
+    } catch {
+      args = { message: parts.slice(1).join(' ') };
+    }
+  }
+
+  try {
+    await mcpManager.connect();
+    const result = await mcpManager.callTool(toolName, args);
+    setNotification(`🔧 ${toolName}:\n\n${result}`);
+  } catch (err) {
+    setNotification(`❌ Ошибка: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return true;
+}
+```
+
+**Step 3: Добавить /mcp call в /help**
+
+В helpText добавить строку в секцию MCP:
+
+```
+  /mcp call <tool> [args]   - вызвать инструмент (args: JSON или текст)
+```
+
+**Step 4: Собрать и проверить**
+
+```bash
+npm run build
+npm start
+```
+
+В агенте:
+```
+/mcp call get_time
+/mcp call echo hello world
+/mcp call get_agent_info
+```
+
+Ожидаемый результат для `get_time`:
+```
+🔧 get_time:
+
+09.03.2026, 15:42:10
+```
+
+**Step 5: Зафиксировать**
+
+```bash
+git add src/mcp/client.ts src/components/Chat.tsx
+git commit -m "feat: add /mcp call command for tool invocation"
+```
+
+---
+
 ## Возможные проблемы
 
 **zod не установлен** — если `import { z } from 'zod'` даёт ошибку:
