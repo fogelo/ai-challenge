@@ -16,6 +16,7 @@ import {
 import { InterviewFlow } from '../profile/index.js';
 import { STATE_INDICATORS, ALLOWED_TRANSITIONS, STATE_INSTRUCTIONS, TaskState } from '../taskstate/index.js';
 import { InvariantManager } from '../invariants/index.js';
+import { MCPClientManager } from '../mcp/index.js';
 
 interface ChatProps {
   modelRegistry: ModelRegistry;
@@ -221,6 +222,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [interviewAnswers, setInterviewAnswers] = useState<Record<string, any>>({});
   const [invariantManager] = useState(() => new InvariantManager('.invariants'));
   const [invariantsLoaded, setInvariantsLoaded] = useState(false);
+  const [mcpManager] = useState(() => new MCPClientManager());
 
   async function performSummarization(forced: boolean = false): Promise<void> {
     const config = configManager.getSummarizationConfig();
@@ -1280,9 +1282,40 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 📊 Стратегии:
   /strategy                 - показать текущую стратегию
   /strategy <номер>         - переключить стратегию
+
+📡 MCP:
+  /mcp                      - подключиться и показать инструменты
+  /mcp disconnect           - отключиться от сервера
       `.trim();
 
       setNotification(helpText);
+      return true;
+    }
+
+    // MCP commands
+    if (trimmed === '/mcp' || trimmed === '/mcp connect') {
+      setNotification('⏳ Подключение к MCP серверу...');
+      try {
+        await mcpManager.connect();
+        const tools = await mcpManager.listTools();
+        let output = `✅ MCP сервер подключён\n\nДоступные инструменты (${tools.length}):\n\n`;
+        for (const tool of tools) {
+          output += `🔧 ${tool.name}\n`;
+          if (tool.description) {
+            output += `   ${tool.description}\n`;
+          }
+          output += '\n';
+        }
+        setNotification(output.trim());
+      } catch (err) {
+        setNotification(`❌ Ошибка MCP: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
+
+    if (trimmed === '/mcp disconnect') {
+      await mcpManager.disconnect();
+      setNotification('🔌 MCP отключён');
       return true;
     }
 
