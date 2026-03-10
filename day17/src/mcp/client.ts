@@ -50,6 +50,21 @@ export class MCPClientManager {
     }));
   }
 
+  async callTool(name: string, args: Record<string, unknown>): Promise<string> {
+    if (!this.client) throw new Error('Не подключён к MCP серверу');
+
+    const result = await this.client.callTool({ name, arguments: args });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    const textContent = content.find((c) => c.type === 'text') as
+      | { type: 'text'; text: string }
+      | undefined;
+
+    if (!textContent) throw new Error(`Инструмент "${name}" не вернул текстовый результат`);
+
+    return textContent.text;
+  }
+
   async disconnect(): Promise<void> {
     if (this.client) {
       await this.client.close();
