@@ -51,7 +51,7 @@ export async function sendMessage(
     }
 
     return {
-      content: data.choices[0].message.content,
+      content: data.choices[0].message.content ?? '',
       usage: data.usage,
       responseTime,
     };

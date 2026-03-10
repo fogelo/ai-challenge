@@ -4,9 +4,11 @@
  */
 
 export interface Message {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   metadata?: MessageMetadata;  // новое поле
+  tool_call_id?: string;
+  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
 }
 
 /**
@@ -42,6 +44,12 @@ export interface UsageInfo {
   total_tokens: number;
 }
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface OpenRouterRequest {
   /**
    * Model identifier to use for completion
@@ -52,14 +60,25 @@ export interface OpenRouterRequest {
    * Sampling temperature (0-2). Higher values make output more random.
    */
   temperature?: number;
+  tools?: unknown[];
+  tool_choice?: 'auto';
 }
 
 export interface OpenRouterResponse {
   choices: Array<{
     message: {
-      role: 'user' | 'assistant' | 'system';
-      content: string;
+      role: 'user' | 'assistant' | 'system' | 'tool';
+      content: string | null;
+      tool_calls?: Array<{
+        id: string;
+        type: 'function';
+        function: {
+          name: string;
+          arguments: string;
+        };
+      }>;
     };
+    finish_reason?: string;
   }>;
   usage?: UsageInfo;
 }
@@ -71,6 +90,7 @@ export interface ApiResponse {
    * Response time in seconds
    */
   responseTime: number;
+  toolCalls?: ToolCall[];
 }
 
 /**
