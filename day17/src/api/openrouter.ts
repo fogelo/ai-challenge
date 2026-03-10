@@ -40,18 +40,17 @@ export async function sendMessage(
   const openRouterTools: OpenRouterTool[] | undefined =
     tools && tools.length > 0
       ? tools.map((tool) => {
-          const hasProperties = tool.inputSchema && Object.keys(tool.inputSchema).length > 0;
+          // inputSchema из MCP SDK уже является корректным JSON Schema объектом
+          // (с полями type, properties и т.д.) — используем его напрямую
+          const schema = tool.inputSchema;
+          const isJsonSchema = schema && typeof schema === 'object' && 'type' in schema;
           return {
             type: 'function' as const,
             function: {
               name: tool.name,
               description: tool.description,
-              parameters: hasProperties
-                ? {
-                    type: 'object',
-                    properties: tool.inputSchema,
-                    // НЕ помечаем все как required — LLM сам решит на основе описаний
-                  }
+              parameters: isJsonSchema
+                ? schema as Record<string, unknown>
                 : { type: 'object', properties: {} },
             },
           };

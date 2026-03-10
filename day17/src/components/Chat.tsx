@@ -1512,56 +1512,56 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           const MAX_TOOL_ITERATIONS = 10;
           let toolIteration = 0;
 
-          while (apiResponse.toolCalls && apiResponse.toolCalls.length > 0 && toolIteration < MAX_TOOL_ITERATIONS) {
-            toolIteration++;
+          try {
+            while (apiResponse.toolCalls && apiResponse.toolCalls.length > 0 && toolIteration < MAX_TOOL_ITERATIONS) {
+              toolIteration++;
 
-            // Добавить ход ассистента (с tool_calls) только в локальный контекст
-            loopMessages.push({
-              role: 'assistant',
-              content: apiResponse.content ?? '',
-              tool_calls: apiResponse.toolCalls.map((tc) => ({
-                id: tc.id,
-                type: 'function' as const,
-                function: {
-                  name: tc.name,
-                  arguments: JSON.stringify(tc.arguments),
-                },
-              })),
-            });
+              // Добавить ход ассистента (с tool_calls) только в локальный контекст
+              loopMessages.push({
+                role: 'assistant',
+                content: apiResponse.content ?? '',
+                tool_calls: apiResponse.toolCalls.map((tc) => ({
+                  id: tc.id,
+                  type: 'function' as const,
+                  function: {
+                    name: tc.name,
+                    arguments: JSON.stringify(tc.arguments),
+                  },
+                })),
+              });
 
-            // Выполнить каждый вызов инструмента и добавить результаты в локальный контекст
-            for (const toolCall of apiResponse.toolCalls) {
-              setActiveMcpTool(toolCall.name);
+              // Выполнить каждый вызов инструмента и добавить результаты в локальный контекст
+              for (const toolCall of apiResponse.toolCalls) {
+                setActiveMcpTool(toolCall.name);
 
-              let toolResult: string;
-              try {
-                toolResult = await mcpManager.callTool(toolCall.name, toolCall.arguments);
-              } catch (err) {
-                toolResult = `Ошибка вызова инструмента: ${err instanceof Error ? err.message : String(err)}`;
+                let toolResult: string;
+                try {
+                  toolResult = await mcpManager.callTool(toolCall.name, toolCall.arguments);
+                } catch (err) {
+                  toolResult = `Ошибка вызова инструмента: ${err instanceof Error ? err.message : String(err)}`;
+                }
+
+                // Сообщение role: 'tool' добавляется только в loopMessages, НЕ в историю разговора
+                loopMessages.push({
+                  role: 'tool',
+                  content: toolResult,
+                  tool_call_id: toolCall.id,
+                });
               }
 
-              // Сообщение role: 'tool' добавляется только в loopMessages, НЕ в историю разговора
-              loopMessages.push({
-                role: 'tool',
-                content: toolResult,
-                tool_call_id: toolCall.id,
-              });
+              // Запросить следующий ответ LLM (может вернуть ещё вызов инструмента или финальный ответ)
+              apiResponse = await sendMessage(
+                loopMessages,
+                currentModel,
+                systemPrompt,
+                temperature,
+                mcpTools.length > 0 ? mcpTools : undefined
+              );
             }
-
+          } finally {
+            // Сбросить индикатор всегда: при нормальном завершении, MAX_TOOL_ITERATIONS или ошибке
             setActiveMcpTool(null);
-
-            // Запросить следующий ответ LLM (может вернуть ещё вызов инструмента или финальный ответ)
-            apiResponse = await sendMessage(
-              loopMessages,
-              currentModel,
-              systemPrompt,
-              temperature,
-              mcpTools.length > 0 ? mcpTools : undefined
-            );
           }
-
-          // Сбросить индикатор даже если цикл вышел по MAX_TOOL_ITERATIONS
-          setActiveMcpTool(null);
 
           // State guard: блокируем реализацию в состоянии PLANNING
           const guardTask = conversation.getMemoryManager().getTaskStateMachine().getCurrentTask();
