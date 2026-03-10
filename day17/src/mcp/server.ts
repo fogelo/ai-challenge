@@ -3,6 +3,22 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { execSync } from 'child_process';
+import { get as httpsGet } from 'https';
+
+function fetchText(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    httpsGet(url, { headers: { 'User-Agent': 'curl/7.0' } }, (res) => {
+      let data = '';
+      res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const text = await fetchText(url);
+  return JSON.parse(text) as T;
+}
 
 const server = new McpServer({
   name: 'day17-local-server',
@@ -133,8 +149,7 @@ server.registerTool(
       const n = Math.min(limit ?? 10, 200);
       let url = `https://jsonplaceholder.typicode.com/todos?_limit=${n}`;
       if (completed !== undefined) url += `&completed=${completed}`;
-      const res = await fetch(url);
-      const data = await res.json() as Array<{ id: number; title: string; completed: boolean; userId: number }>;
+      const data = await fetchJson<Array<{ id: number; title: string; completed: boolean; userId: number }>>(url);
       const text = data.map(t => `[${t.completed ? '✓' : ' '}] #${t.id} ${t.title} (user: ${t.userId})`).join('\n');
       return { content: [{ type: 'text', text: text || '(пусто)' }] };
     } catch (err) {
@@ -157,8 +172,7 @@ server.registerTool(
       const n = Math.min(limit ?? 5, 100);
       let url = `https://jsonplaceholder.typicode.com/posts?_limit=${n}`;
       if (userId !== undefined) url += `&userId=${userId}`;
-      const res = await fetch(url);
-      const data = await res.json() as Array<{ id: number; title: string; body: string; userId: number }>;
+      const data = await fetchJson<Array<{ id: number; title: string; body: string; userId: number }>>(url);
       const text = data.map(p => `#${p.id} [user:${p.userId}] ${p.title}\n  ${p.body.slice(0, 80)}...`).join('\n\n');
       return { content: [{ type: 'text', text: text || '(пусто)' }] };
     } catch (err) {
@@ -177,9 +191,9 @@ server.registerTool(
   },
   async ({ userId }) => {
     try {
-      const res = await fetch(`https://jsonplaceholder.typicode.com/users/${userId}`);
-      if (!res.ok) return { content: [{ type: 'text', text: `Пользователь ${userId} не найден` }] };
-      const u = await res.json() as { id: number; name: string; email: string; phone: string; website: string; company: { name: string } };
+      const u = await fetchJson<{ id: number; name: string; email: string; phone: string; website: string; company: { name: string } }>(
+        `https://jsonplaceholder.typicode.com/users/${userId}`
+      );
       const text = `Имя: ${u.name}\nEmail: ${u.email}\nТелефон: ${u.phone}\nСайт: ${u.website}\nКомпания: ${u.company.name}`;
       return { content: [{ type: 'text', text: text }] };
     } catch (err) {
@@ -203,8 +217,7 @@ server.registerTool(
     try {
       const fmt = format === 'full' ? '?format=4' : '?format=3';
       const url = `https://wttr.in/${encodeURIComponent(city)}${fmt}`;
-      const res = await fetch(url, { headers: { 'User-Agent': 'curl/7.0' } });
-      const text = await res.text();
+      const text = await fetchText(url);
       return { content: [{ type: 'text', text: text.trim() }] };
     } catch (err) {
       return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
