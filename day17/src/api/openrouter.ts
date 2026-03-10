@@ -1,10 +1,21 @@
-import { Message, OpenRouterRequest, OpenRouterResponse, ApiResponse } from '../types/index.js';
+import { Message, OpenRouterRequest, OpenRouterResponse, ApiResponse, ToolCall } from '../types/index.js';
+import type { MCPTool } from '../mcp/index.js';
+
+interface OpenRouterTool {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters: Record<string, unknown>;
+  };
+}
 
 export async function sendMessage(
   messages: Message[],
   modelId: string,
   systemPrompt?: string,
-  temperature?: number
+  temperature?: number,
+  tools?: MCPTool[]
 ): Promise<ApiResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -16,14 +27,42 @@ export async function sendMessage(
     throw new Error('Model ID is required');
   }
 
-  const allMessages: Message[] = systemPrompt
-    ? [{ role: 'system', content: systemPrompt }, ...messages]
-    : messages;
+  const allMessages = (systemPrompt
+    ? [{ role: 'system' as const, content: systemPrompt }, ...messages]
+    : messages
+  ).map((m) => {
+    const msg: Record<string, unknown> = { role: m.role, content: m.content };
+    if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+    if (m.tool_calls) msg.tool_calls = m.tool_calls;
+    return msg;
+  });
+
+  const openRouterTools: OpenRouterTool[] | undefined =
+    tools && tools.length > 0
+      ? tools.map((tool) => {
+          const hasProperties = tool.inputSchema && Object.keys(tool.inputSchema).length > 0;
+          return {
+            type: 'function' as const,
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: hasProperties
+                ? {
+                    type: 'object',
+                    properties: tool.inputSchema,
+                    // НЕ помечаем все как required — LLM сам решит на основе описаний
+                  }
+                : { type: 'object', properties: {} },
+            },
+          };
+        })
+      : undefined;
 
   const requestBody: OpenRouterRequest = {
     model: modelId,
-    messages: allMessages,
+    messages: allMessages as unknown as Message[],
     ...(temperature !== undefined && { temperature }),
+    ...(openRouterTools && { tools: openRouterTools, tool_choice: 'auto' }),
   };
 
   const startTime = performance.now();
@@ -50,10 +89,31 @@ export async function sendMessage(
       throw new Error('Некорректный формат ответа от OpenRouter API');
     }
 
+    const choice = data.choices[0];
+    const rawToolCalls = choice.message.tool_calls;
+    const finishReason = choice.finish_reason;
+
+    // Заполняем toolCalls когда LLM сигнализирует о желании вызвать инструменты
+    const toolCalls: ToolCall[] | undefined =
+      (finishReason === 'tool_calls' || (rawToolCalls && rawToolCalls.length > 0))
+        ? rawToolCalls?.map((tc) => ({
+            id: tc.id,
+            name: tc.function.name,
+            arguments: (() => {
+              try {
+                return JSON.parse(tc.function.arguments) as Record<string, unknown>;
+              } catch {
+                return {};
+              }
+            })(),
+          }))
+        : undefined;
+
     return {
-      content: data.choices[0].message.content ?? '',
+      content: choice.message.content ?? '',
       usage: data.usage,
       responseTime,
+      toolCalls,
     };
   } catch (error) {
     if (error instanceof Error) {
