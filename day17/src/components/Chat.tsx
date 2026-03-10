@@ -1498,13 +1498,20 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             ? await mcpManager.listTools()
             : [];
 
+          // Если MCP подключён — добавить подсказку в system prompt чтобы LLM
+          // использовал инструменты напрямую для фактических запросов,
+          // не ожидая прохождения через цикл планирования
+          const finalSystemPrompt = mcpTools.length > 0
+            ? (systemPrompt || '') + `\n\n=== MCP ИНСТРУМЕНТЫ ===\nДоступны инструменты: ${mcpTools.map(t => t.name).join(', ')}.\nДля простых информационных вопросов (время, данные, факты) — используй инструменты СРАЗУ, без планирования и уточняющих вопросов.`
+            : systemPrompt;
+
           // Tool-calling loop: повторять пока LLM не вернёт финальный текстовый ответ
           // loopMessages — локальная копия, ходы с инструментами НЕ сохраняются в историю разговора
           let loopMessages = [...apiMessages];
           let apiResponse = await sendMessage(
             loopMessages,
             currentModel,
-            systemPrompt,
+            finalSystemPrompt,
             temperature,
             mcpTools.length > 0 ? mcpTools : undefined
           );
@@ -1553,7 +1560,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
               apiResponse = await sendMessage(
                 loopMessages,
                 currentModel,
-                systemPrompt,
+                finalSystemPrompt,
                 temperature,
                 mcpTools.length > 0 ? mcpTools : undefined
               );
