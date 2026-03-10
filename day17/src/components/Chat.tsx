@@ -16,7 +16,7 @@ import {
 import { InterviewFlow } from '../profile/index.js';
 import { STATE_INDICATORS, ALLOWED_TRANSITIONS, STATE_INSTRUCTIONS, TaskState } from '../taskstate/index.js';
 import { InvariantManager } from '../invariants/index.js';
-import { MCPClientManager } from '../mcp/index.js';
+import { MCPClientManager, MCPTool } from '../mcp/index.js';
 
 interface ChatProps {
   modelRegistry: ModelRegistry;
@@ -1448,12 +1448,75 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           const systemPrompt = conversation.buildSystemPromptWithMemory(basePrompt);
           const apiMessages = await conversation.getMessagesForAPI();
 
-          const apiResponse = await sendMessage(
-            apiMessages,
+          // Получить MCP-инструменты если подключены (включает LLM-driven tool calling)
+          const mcpTools: MCPTool[] = mcpManager.isConnected()
+            ? await mcpManager.listTools()
+            : [];
+
+          // Tool-calling loop: повторять пока LLM не вернёт финальный текстовый ответ
+          // loopMessages — локальная копия, ходы с инструментами НЕ сохраняются в историю разговора
+          let loopMessages = [...apiMessages];
+          let apiResponse = await sendMessage(
+            loopMessages,
             currentModel,
             systemPrompt,
-            temperature
+            temperature,
+            mcpTools.length > 0 ? mcpTools : undefined
           );
+
+          const MAX_TOOL_ITERATIONS = 10;
+          let toolIteration = 0;
+
+          while (apiResponse.toolCalls && apiResponse.toolCalls.length > 0 && toolIteration < MAX_TOOL_ITERATIONS) {
+            toolIteration++;
+
+            // Добавить ход ассистента (с tool_calls) только в локальный контекст
+            loopMessages.push({
+              role: 'assistant',
+              content: apiResponse.content ?? '',
+              tool_calls: apiResponse.toolCalls.map((tc) => ({
+                id: tc.id,
+                type: 'function' as const,
+                function: {
+                  name: tc.name,
+                  arguments: JSON.stringify(tc.arguments),
+                },
+              })),
+            });
+
+            // Выполнить каждый вызов инструмента и добавить результаты в локальный контекст
+            for (const toolCall of apiResponse.toolCalls) {
+              setActiveMcpTool(toolCall.name);
+
+              let toolResult: string;
+              try {
+                toolResult = await mcpManager.callTool(toolCall.name, toolCall.arguments);
+              } catch (err) {
+                toolResult = `Ошибка вызова инструмента: ${err instanceof Error ? err.message : String(err)}`;
+              }
+
+              // Сообщение role: 'tool' добавляется только в loopMessages, НЕ в историю разговора
+              loopMessages.push({
+                role: 'tool',
+                content: toolResult,
+                tool_call_id: toolCall.id,
+              });
+            }
+
+            setActiveMcpTool(null);
+
+            // Запросить следующий ответ LLM (может вернуть ещё вызов инструмента или финальный ответ)
+            apiResponse = await sendMessage(
+              loopMessages,
+              currentModel,
+              systemPrompt,
+              temperature,
+              mcpTools.length > 0 ? mcpTools : undefined
+            );
+          }
+
+          // Сбросить индикатор даже если цикл вышел по MAX_TOOL_ITERATIONS
+          setActiveMcpTool(null);
 
           // State guard: блокируем реализацию в состоянии PLANNING
           const guardTask = conversation.getMemoryManager().getTaskStateMachine().getCurrentTask();
