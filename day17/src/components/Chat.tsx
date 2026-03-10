@@ -223,6 +223,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [invariantManager] = useState(() => new InvariantManager('.invariants'));
   const [invariantsLoaded, setInvariantsLoaded] = useState(false);
   const [mcpManager] = useState(() => new MCPClientManager());
+  const [activeMcpTool, setActiveMcpTool] = useState<string | null>(null);
 
   async function performSummarization(forced: boolean = false): Promise<void> {
     const config = configManager.getSummarizationConfig();
@@ -1705,7 +1706,11 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             <Text bold color="blue">
               Assistant:{' '}
             </Text>
-            <Text dimColor>[загрузка...]</Text>
+            {activeMcpTool ? (
+              <Text color="magenta">🔧 Вызов MCP: {activeMcpTool}...</Text>
+            ) : (
+              <Text dimColor>[загрузка...]</Text>
+            )}
           </Box>
         )}
       </Box>
