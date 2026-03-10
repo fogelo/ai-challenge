@@ -1,27 +1,27 @@
-# MCP Tool Calling Implementation Plan
+# MCP Tool Calling — План реализации
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Для агентов:** ОБЯЗАТЕЛЬНО использовать superpowers:subagent-driven-development (если доступны сабагенты) или superpowers:executing-plans. Шаги используют синтаксис чекбоксов (`- [ ]`) для отслеживания.
 
-**Goal:** Integrate full MCP function calling so the LLM can autonomously invoke MCP tools mid-conversation, with visual feedback in the UI, plus a manual `/mcp call` command.
+**Цель:** Интегрировать полный MCP function calling — LLM автономно вызывает MCP-инструменты в ходе разговора, с визуальной обратной связью в UI и ручной командой `/mcp call`.
 
-**Architecture:** Extend `MCPClientManager` with `callTool()`, update `sendMessage()` to accept and handle OpenAI-format `tools`, add a tool-loop in `Chat.tsx` that runs until the LLM produces a final text response, and add `activeMcpTool` state for UI visualization.
+**Архитектура:** Расширить `MCPClientManager` методом `callTool()`, обновить `sendMessage()` для приёма и обработки `tools` в формате OpenAI, добавить tool-loop в `Chat.tsx` который работает пока LLM не вернёт финальный текстовый ответ, добавить state `activeMcpTool` для визуализации.
 
-**Tech Stack:** TypeScript, Ink (React for CLI), `@modelcontextprotocol/sdk`, OpenRouter API (OpenAI-compatible function calling format)
+**Технологии:** TypeScript, Ink (React для CLI), `@modelcontextprotocol/sdk`, OpenRouter API (формат function calling, совместимый с OpenAI)
 
-**Spec:** `docs/superpowers/specs/2026-03-10-mcp-tool-calling-design.md`
+**Спецификация:** `docs/superpowers/specs/2026-03-10-mcp-tool-calling-design.md`
 
 ---
 
-## Chunk 1: Types + MCPClientManager.callTool
+## Чанк 1: Типы + MCPClientManager.callTool
 
-### Task 1: Extend types in `src/types/index.ts`
+### Задача 1: Расширить типы в `src/types/index.ts`
 
-**Files:**
-- Modify: `src/types/index.ts`
+**Файлы:**
+- Изменить: `src/types/index.ts`
 
-- [ ] **Step 1: Add `ToolCall` interface and extend `Message` and `ApiResponse`**
+- [ ] **Шаг 1: Добавить интерфейс `ToolCall` и расширить `Message` и `ApiResponse`**
 
-Open `src/types/index.ts`. Add after the existing `UsageInfo` interface:
+Открыть `src/types/index.ts`. Добавить после существующего интерфейса `UsageInfo`:
 
 ```ts
 export interface ToolCall {
@@ -31,27 +31,27 @@ export interface ToolCall {
 }
 ```
 
-Change `Message.role` from:
+Изменить `Message.role` с:
 ```ts
 role: 'user' | 'assistant' | 'system';
 ```
-to:
+на:
 ```ts
 role: 'user' | 'assistant' | 'system' | 'tool';
 ```
 
-Add two optional fields to `Message`:
+Добавить два опциональных поля в `Message`:
 ```ts
 tool_call_id?: string;
 tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
 ```
 
-Extend `ApiResponse` — add one optional field:
+Расширить `ApiResponse` — добавить одно опциональное поле:
 ```ts
 toolCalls?: ToolCall[];
 ```
 
-Also add `tools` and `tool_choice` to `OpenRouterRequest`:
+Также добавить `tools` и `tool_choice` в `OpenRouterRequest`:
 ```ts
 export interface OpenRouterRequest {
   model: string;
@@ -62,7 +62,7 @@ export interface OpenRouterRequest {
 }
 ```
 
-And update `OpenRouterResponse` to handle tool_calls:
+Обновить `OpenRouterResponse` для обработки tool_calls:
 ```ts
 export interface OpenRouterResponse {
   choices: Array<{
@@ -84,16 +84,16 @@ export interface OpenRouterResponse {
 }
 ```
 
-- [ ] **Step 2: Verify TypeScript still compiles**
+- [ ] **Шаг 2: Проверить что TypeScript компилируется**
 
 ```bash
 cd /Users/antor/Desktop/learn2/gladkov-challenge/ai-challenge/day17
 npm run build
 ```
 
-Expected: no errors. If errors appear about `role: 'tool'` in existing code, fix by narrowing types at call sites.
+Ожидается: без ошибок. Если появятся ошибки про `role: 'tool'` в существующем коде — исправить сужением типов на местах вызова.
 
-- [ ] **Step 3: Commit**
+- [ ] **Шаг 3: Коммит**
 
 ```bash
 git add src/types/index.ts
@@ -102,14 +102,14 @@ git commit -m "feat: add ToolCall type and extend Message/ApiResponse/OpenRouter
 
 ---
 
-### Task 2: Add `callTool()` to `MCPClientManager`
+### Задача 2: Добавить `callTool()` в `MCPClientManager`
 
-**Files:**
-- Modify: `src/mcp/client.ts`
+**Файлы:**
+- Изменить: `src/mcp/client.ts`
 
-- [ ] **Step 1: Add `callTool` method**
+- [ ] **Шаг 1: Добавить метод `callTool`**
 
-Open `src/mcp/client.ts`. After the `listTools()` method, add:
+Открыть `src/mcp/client.ts`. После метода `listTools()` добавить:
 
 ```ts
 async callTool(name: string, args: Record<string, unknown>): Promise<string> {
@@ -127,23 +127,23 @@ async callTool(name: string, args: Record<string, unknown>): Promise<string> {
 }
 ```
 
-- [ ] **Step 2: Build to verify no type errors**
+- [ ] **Шаг 2: Сборка для проверки типов**
 
 ```bash
 npm run build
 ```
 
-Expected: clean build.
+Ожидается: чистая сборка.
 
-- [ ] **Step 3: Quick manual smoke test**
+- [ ] **Шаг 3: Быстрый ручной smoke-тест**
 
 ```bash
 npm run dev
 ```
 
-Type `/mcp` — confirm connection still works and tools list appears. Type `/mcp disconnect`. Exit with Ctrl+C.
+Ввести `/mcp` — убедиться что подключение работает и список инструментов появляется. Ввести `/mcp disconnect`. Выйти Ctrl+C.
 
-- [ ] **Step 4: Commit**
+- [ ] **Шаг 4: Коммит**
 
 ```bash
 git add src/mcp/client.ts
@@ -152,24 +152,24 @@ git commit -m "feat: add callTool() to MCPClientManager"
 
 ---
 
-## Chunk 2: OpenRouter tool calling support
+## Чанк 2: Поддержка tool calling в OpenRouter
 
-### Task 3: Extend request path — send tools to OpenRouter
+### Задача 3: Расширить путь запроса — отправлять tools в OpenRouter
 
-**Files:**
-- Modify: `src/api/openrouter.ts`
-- Modify: `src/mcp/index.ts` (re-export MCPTool for import)
+**Файлы:**
+- Изменить: `src/api/openrouter.ts`
+- Изменить: `src/mcp/index.ts` (ре-экспорт MCPTool для импорта)
 
-- [ ] **Step 1: Add `MCPTool` to MCP exports**
+- [ ] **Шаг 1: Проверить экспорт `MCPTool` из MCP модуля**
 
-Open `src/mcp/index.ts`. Verify it already exports `MCPTool` (it should from existing code). If not, add:
+Открыть `src/mcp/index.ts`. Убедиться что `MCPTool` уже экспортируется (должно быть из существующего кода). Если нет — добавить:
 ```ts
 export type { MCPTool } from './client.js';
 ```
 
-- [ ] **Step 2: Add import and helper type to `openrouter.ts`**
+- [ ] **Шаг 2: Добавить импорт и вспомогательный тип в `openrouter.ts`**
 
-Open `src/api/openrouter.ts`. Add at the top, after existing imports:
+Открыть `src/api/openrouter.ts`. Добавить вверху, после существующих импортов:
 
 ```ts
 import { ToolCall } from '../types/index.js';
@@ -185,9 +185,9 @@ interface OpenRouterTool {
 }
 ```
 
-- [ ] **Step 3: Update function signature to accept `tools`**
+- [ ] **Шаг 3: Обновить сигнатуру функции — добавить параметр `tools`**
 
-Change:
+Изменить:
 ```ts
 export async function sendMessage(
   messages: Message[],
@@ -197,7 +197,7 @@ export async function sendMessage(
 ): Promise<ApiResponse>
 ```
 
-to:
+на:
 ```ts
 export async function sendMessage(
   messages: Message[],
@@ -208,16 +208,16 @@ export async function sendMessage(
 ): Promise<ApiResponse>
 ```
 
-- [ ] **Step 4: Build `allMessages` with tool-calling fields**
+- [ ] **Шаг 4: Построить `allMessages` с полями для tool calling**
 
-Find the existing `allMessages` construction:
+Найти существующее построение `allMessages`:
 ```ts
 const allMessages: Message[] = systemPrompt
   ? [{ role: 'system', content: systemPrompt }, ...messages]
   : messages;
 ```
 
-Replace it with a version that passes through `tool_call_id` and `tool_calls` fields needed for multi-turn tool calling:
+Заменить версией которая пробрасывает поля `tool_call_id` и `tool_calls` для multi-turn tool calling:
 ```ts
 const allMessages = (systemPrompt
   ? [{ role: 'system' as const, content: systemPrompt }, ...messages]
@@ -230,16 +230,16 @@ const allMessages = (systemPrompt
 });
 ```
 
-- [ ] **Step 5: Convert MCPTool list to OpenRouter format and add to request body**
+- [ ] **Шаг 5: Конвертировать список MCPTool в формат OpenRouter и добавить в тело запроса**
 
-After the `allMessages` construction, add:
+После построения `allMessages` добавить:
 
 ```ts
 const openRouterTools: OpenRouterTool[] | undefined =
   tools && tools.length > 0
     ? tools.map((tool) => {
-        // MCP inputSchema may be a flat map of property names to zod schemas,
-        // or already a JSON Schema object. Wrap in a standard JSON Schema envelope.
+        // inputSchema MCP может быть плоской картой имён свойств к zod-схемам,
+        // или уже JSON Schema объектом. Оборачиваем в стандартный JSON Schema конверт.
         const hasProperties = tool.inputSchema && Object.keys(tool.inputSchema).length > 0;
         return {
           type: 'function' as const,
@@ -250,7 +250,7 @@ const openRouterTools: OpenRouterTool[] | undefined =
               ? {
                   type: 'object',
                   properties: tool.inputSchema,
-                  // Do NOT mark all as required — let the LLM decide based on descriptions
+                  // НЕ помечаем все как required — LLM сам решит на основе описаний
                 }
               : { type: 'object', properties: {} },
           },
@@ -259,7 +259,7 @@ const openRouterTools: OpenRouterTool[] | undefined =
     : undefined;
 ```
 
-Update `requestBody` to include tools when present:
+Обновить `requestBody` — добавить tools когда они есть:
 ```ts
 const requestBody: OpenRouterRequest = {
   model: modelId,
@@ -269,15 +269,15 @@ const requestBody: OpenRouterRequest = {
 };
 ```
 
-- [ ] **Step 6: Build to verify no errors**
+- [ ] **Шаг 6: Сборка для проверки**
 
 ```bash
 npm run build
 ```
 
-Expected: clean build.
+Ожидается: чистая сборка.
 
-- [ ] **Step 7: Commit request path changes**
+- [ ] **Шаг 7: Коммит изменений пути запроса**
 
 ```bash
 git add src/api/openrouter.ts src/mcp/index.ts
@@ -286,14 +286,14 @@ git commit -m "feat: extend sendMessage() request path with OpenRouter function 
 
 ---
 
-### Task 4: Extend response path — parse tool_calls from OpenRouter response
+### Задача 4: Расширить путь ответа — парсить tool_calls из ответа OpenRouter
 
-**Files:**
-- Modify: `src/api/openrouter.ts`
+**Файлы:**
+- Изменить: `src/api/openrouter.ts`
 
-- [ ] **Step 1: Parse `tool_calls` from the API response**
+- [ ] **Шаг 1: Парсить `tool_calls` из ответа API**
 
-In `openrouter.ts`, find the existing return block:
+В `openrouter.ts` найти существующий блок возврата:
 ```ts
 return {
   content: data.choices[0].message.content,
@@ -302,13 +302,13 @@ return {
 };
 ```
 
-Replace with:
+Заменить на:
 ```ts
 const choice = data.choices[0];
 const rawToolCalls = choice.message.tool_calls;
 const finishReason = choice.finish_reason;
 
-// Populate toolCalls when LLM signals it wants to call tools
+// Заполняем toolCalls когда LLM сигнализирует о желании вызвать инструменты
 const toolCalls: ToolCall[] | undefined =
   (finishReason === 'tool_calls' || (rawToolCalls && rawToolCalls.length > 0))
     ? rawToolCalls?.map((tc) => ({
@@ -332,15 +332,15 @@ return {
 };
 ```
 
-- [ ] **Step 2: Build to verify**
+- [ ] **Шаг 2: Сборка для проверки**
 
 ```bash
 npm run build
 ```
 
-Expected: clean build.
+Ожидается: чистая сборка.
 
-- [ ] **Step 3: Commit**
+- [ ] **Шаг 3: Коммит**
 
 ```bash
 git add src/api/openrouter.ts
@@ -349,24 +349,24 @@ git commit -m "feat: parse tool_calls in sendMessage() response for MCP tool-cal
 
 ---
 
-## Chunk 3: Chat.tsx — tool-loop, UI, manual command, help
+## Чанк 3: Chat.tsx — tool-loop, UI, ручная команда, справка
 
-### Task 5: Add `activeMcpTool` state and UI indicator
+### Задача 5: Добавить state `activeMcpTool` и индикатор в UI
 
-**Files:**
-- Modify: `src/components/Chat.tsx`
+**Файлы:**
+- Изменить: `src/components/Chat.tsx`
 
-- [ ] **Step 1: Add `activeMcpTool` state**
+- [ ] **Шаг 1: Добавить state `activeMcpTool`**
 
-In `Chat.tsx`, find the block of `useState` declarations (around line 197–225). Add:
+В `Chat.tsx` найти блок объявлений `useState` (примерно строки 197–225). Добавить:
 
 ```ts
 const [activeMcpTool, setActiveMcpTool] = useState<string | null>(null);
 ```
 
-- [ ] **Step 2: Update loading indicator in JSX**
+- [ ] **Шаг 2: Обновить индикатор загрузки в JSX**
 
-Find the loading indicator section (around line 1703):
+Найти секцию индикатора загрузки (примерно строка 1703):
 ```tsx
 {isLoading && (
   <Box>
@@ -378,7 +378,7 @@ Find the loading indicator section (around line 1703):
 )}
 ```
 
-Replace with:
+Заменить на:
 ```tsx
 {isLoading && (
   <Box>
@@ -394,15 +394,15 @@ Replace with:
 )}
 ```
 
-- [ ] **Step 3: Build to verify**
+- [ ] **Шаг 3: Сборка для проверки**
 
 ```bash
 npm run build
 ```
 
-Expected: clean build.
+Ожидается: чистая сборка.
 
-- [ ] **Step 4: Commit**
+- [ ] **Шаг 4: Коммит**
 
 ```bash
 git add src/components/Chat.tsx
@@ -411,27 +411,27 @@ git commit -m "feat: add activeMcpTool state and MCP tool call indicator in Chat
 
 ---
 
-### Task 6: Replace single `sendMessage` call with tool-loop
+### Задача 6: Заменить единственный вызов `sendMessage` на tool-loop
 
-**Files:**
-- Modify: `src/components/Chat.tsx`
-- Modify: `src/api/openrouter.ts` (update import used in Chat)
+**Файлы:**
+- Изменить: `src/components/Chat.tsx`
+- Изменить: `src/api/openrouter.ts` (обновить импорт используемый в Chat)
 
-- [ ] **Step 1: Import `MCPTool` type in `Chat.tsx`**
+- [ ] **Шаг 1: Импортировать тип `MCPTool` в `Chat.tsx`**
 
-Find the existing MCP import line:
+Найти существующую строку импорта MCP:
 ```ts
 import { MCPClientManager } from '../mcp/index.js';
 ```
 
-Replace with:
+Заменить на:
 ```ts
 import { MCPClientManager, MCPTool } from '../mcp/index.js';
 ```
 
-- [ ] **Step 2: Replace the main `sendMessage` call with a tool-loop**
+- [ ] **Шаг 2: Заменить основной вызов `sendMessage` на tool-loop**
 
-Find this exact block in `Chat.tsx` (around line 1450):
+Найти этот точный блок в `Chat.tsx` (примерно строка 1450):
 ```ts
 const apiResponse = await sendMessage(
   apiMessages,
@@ -441,16 +441,16 @@ const apiResponse = await sendMessage(
 );
 ```
 
-Replace it with the following tool-loop. The variable name `apiResponse` is preserved so all code below (invariant check, metadata, stats) continues to work unchanged. Tool messages are kept only in `loopMessages` and are NOT added to the persistent `conversation` history:
+Заменить следующим tool-loop. Имя переменной `apiResponse` сохраняется — весь код ниже (проверка инвариантов, метаданные, статистика) продолжает работать без изменений. Сообщения с инструментами хранятся только в `loopMessages` и НЕ добавляются в постоянную историю `conversation`:
 
 ```ts
-// Get MCP tools if connected (enables LLM-driven tool calling)
+// Получить MCP-инструменты если подключены (включает LLM-driven tool calling)
 const mcpTools: MCPTool[] = mcpManager.isConnected()
   ? await mcpManager.listTools()
   : [];
 
-// Tool-calling loop: repeat until LLM produces a final text response
-// loopMessages is a local copy — tool turns are NOT persisted to conversation history
+// Tool-calling loop: повторять пока LLM не вернёт финальный текстовый ответ
+// loopMessages — локальная копия, ходы с инструментами НЕ сохраняются в историю разговора
 let loopMessages = [...apiMessages];
 let apiResponse = await sendMessage(
   loopMessages,
@@ -466,7 +466,7 @@ let toolIteration = 0;
 while (apiResponse.toolCalls && apiResponse.toolCalls.length > 0 && toolIteration < MAX_TOOL_ITERATIONS) {
   toolIteration++;
 
-  // Add assistant turn (with tool_calls) to loop context only
+  // Добавить ход ассистента (с tool_calls) только в локальный контекст
   loopMessages.push({
     role: 'assistant',
     content: apiResponse.content ?? '',
@@ -480,7 +480,7 @@ while (apiResponse.toolCalls && apiResponse.toolCalls.length > 0 && toolIteratio
     })),
   });
 
-  // Execute each tool call and append tool results to loop context
+  // Выполнить каждый вызов инструмента и добавить результаты в локальный контекст
   for (const toolCall of apiResponse.toolCalls) {
     setActiveMcpTool(toolCall.name);
 
@@ -491,7 +491,7 @@ while (apiResponse.toolCalls && apiResponse.toolCalls.length > 0 && toolIteratio
       toolResult = `Ошибка вызова инструмента: ${err instanceof Error ? err.message : String(err)}`;
     }
 
-    // role: 'tool' message is added to loopMessages only, not to conversation history
+    // Сообщение role: 'tool' добавляется только в loopMessages, НЕ в историю разговора
     loopMessages.push({
       role: 'tool',
       content: toolResult,
@@ -501,7 +501,7 @@ while (apiResponse.toolCalls && apiResponse.toolCalls.length > 0 && toolIteratio
 
   setActiveMcpTool(null);
 
-  // Ask LLM for next response (may produce another tool call or final answer)
+  // Запросить следующий ответ LLM (может вернуть ещё вызов инструмента или финальный ответ)
   apiResponse = await sendMessage(
     loopMessages,
     currentModel,
@@ -511,19 +511,19 @@ while (apiResponse.toolCalls && apiResponse.toolCalls.length > 0 && toolIteratio
   );
 }
 
-// Ensure indicator is cleared even if loop exits due to MAX_TOOL_ITERATIONS
+// Сбросить индикатор даже если цикл вышел по MAX_TOOL_ITERATIONS
 setActiveMcpTool(null);
 ```
 
-- [ ] **Step 3: Build**
+- [ ] **Шаг 3: Сборка**
 
 ```bash
 npm run build
 ```
 
-Expected: clean build. Fix any type errors (e.g., `role: 'tool'` narrowing issues).
+Ожидается: чистая сборка. Исправить любые ошибки типов (например, сужение `role: 'tool'`).
 
-- [ ] **Step 4: Commit**
+- [ ] **Шаг 4: Коммит**
 
 ```bash
 git add src/components/Chat.tsx
@@ -532,14 +532,14 @@ git commit -m "feat: implement MCP tool-calling loop in Chat.tsx (LLM-driven too
 
 ---
 
-### Task 7: Add `/mcp call` manual command and update `/help`
+### Задача 7: Добавить ручную команду `/mcp call` и обновить `/help`
 
-**Files:**
-- Modify: `src/components/Chat.tsx`
+**Файлы:**
+- Изменить: `src/components/Chat.tsx`
 
-- [ ] **Step 1: Add `/mcp call` handler in `handleCommand()`**
+- [ ] **Шаг 1: Добавить обработчик `/mcp call` в `handleCommand()`**
 
-Find the MCP commands block in `handleCommand()`. After the `/mcp disconnect` handler and before `return false`, add:
+Найти блок MCP команд в `handleCommand()`. После обработчика `/mcp disconnect` и перед `return false` добавить:
 
 ```ts
 if (trimmed.startsWith('/mcp call')) {
@@ -553,7 +553,7 @@ if (trimmed.startsWith('/mcp call')) {
     return true;
   }
 
-  // Parse: first token = tool name, rest = optional JSON args
+  // Парсинг: первый токен = имя инструмента, остаток = опциональные JSON-аргументы
   const spaceIdx = rest.indexOf(' ');
   const toolName = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
   const argsStr = spaceIdx === -1 ? '' : rest.slice(spaceIdx + 1).trim();
@@ -586,16 +586,16 @@ if (trimmed.startsWith('/mcp call')) {
 }
 ```
 
-- [ ] **Step 2: Update `/help` MCP section**
+- [ ] **Шаг 2: Обновить секцию MCP в `/help`**
 
-Find the MCP section in the help text string:
+Найти секцию MCP в строке справки:
 ```ts
 📡 MCP:
   /mcp                      - подключиться и показать инструменты
   /mcp disconnect           - отключиться от сервера
 ```
 
-Replace with:
+Заменить на:
 ```ts
 📡 MCP:
   /mcp                           - подключиться и показать инструменты
@@ -604,15 +604,15 @@ Replace with:
   /mcp call <инструмент> <json>  - вызвать инструмент с параметрами
 ```
 
-- [ ] **Step 3: Build**
+- [ ] **Шаг 3: Сборка**
 
 ```bash
 npm run build
 ```
 
-Expected: clean build.
+Ожидается: чистая сборка.
 
-- [ ] **Step 4: Commit**
+- [ ] **Шаг 4: Коммит**
 
 ```bash
 git add src/components/Chat.tsx
@@ -621,18 +621,18 @@ git commit -m "feat: add /mcp call manual command and update /help docs"
 
 ---
 
-### Task 8: End-to-end manual verification
+### Задача 8: Сквозная ручная проверка
 
-**No automated test framework is installed. Verify manually.**
+**Фреймворк для тестов не установлен. Проверяем вручную.**
 
-- [ ] **Step 1: Start the agent and verify MCP server is up**
+- [ ] **Шаг 1: Запустить агент и убедиться что MCP сервер работает**
 
 ```bash
 cd /Users/antor/Desktop/learn2/gladkov-challenge/ai-challenge/day17
 npm start
 ```
 
-Type `/mcp`. Expected:
+Ввести `/mcp`. Ожидается:
 ```
 ✅ MCP сервер подключён
 
@@ -648,11 +648,11 @@ Type `/mcp`. Expected:
    Возвращает информацию о CLI агенте
 ```
 
-If the tool list does not appear or differs, stop here and check `src/mcp/server.ts`.
+Если список инструментов не появился или отличается — остановиться и проверить `src/mcp/server.ts`.
 
-- [ ] **Step 2: Verify `/help` shows new MCP commands**
+- [ ] **Шаг 2: Проверить что `/help` показывает новые MCP команды**
 
-Type `/help`. Expected in MCP section:
+Ввести `/help`. Ожидается в секции MCP:
 ```
 📡 MCP:
   /mcp                           - подключиться и показать инструменты
@@ -661,33 +661,35 @@ Type `/help`. Expected in MCP section:
   /mcp call <инструмент> <json>  - вызвать инструмент с параметрами
 ```
 
-- [ ] **Step 3: Test manual tool call — no args**
+- [ ] **Шаг 3: Тест ручного вызова — без аргументов**
 
-Type `/mcp call get_time`.
+Ввести `/mcp call get_time`.
 
-Expected: notification shows current date/time string from MCP server.
+Ожидается: уведомление показывает текущую дату/время от MCP сервера.
 
-- [ ] **Step 4: Test manual tool call — with JSON args**
+- [ ] **Шаг 4: Тест ручного вызова — с JSON аргументами**
 
-Type `/mcp call echo {"message":"привет от ручного вызова"}`.
+Ввести `/mcp call echo {"message":"привет от ручного вызова"}`.
 
-Expected: notification shows `echo:\n\nпривет от ручного вызова`.
+Ожидается: уведомление показывает `echo:\n\nпривет от ручного вызова`.
 
-- [ ] **Step 5: Test LLM-driven tool call — get_time**
+- [ ] **Шаг 5: Тест LLM-driven вызова — get_time**
 
-Type (natural language): `который сейчас час?`
+Ввести (на естественном языке): `который сейчас час?`
 
-Expected sequence:
-1. While waiting: loading indicator shows `🔧 Вызов MCP: get_time...`
-2. Final assistant message in chat contains the current time value
+Ожидаемая последовательность:
+1. Во время ожидания: индикатор загрузки показывает `🔧 Вызов MCP: get_time...`
+2. Финальный ответ ассистента в чате содержит текущее время
 
-- [ ] **Step 6: Test LLM-driven tool call — echo**
+Если индикатор не появился — проверить что модель поддерживает function calling (Claude 3.5 Sonnet поддерживает).
 
-Type: `повтори фразу "hello world" используя инструмент echo`
+- [ ] **Шаг 6: Тест LLM-driven вызова — echo**
 
-Expected: assistant invokes `echo` tool and incorporates the returned text into its response.
+Ввести: `повтори фразу "hello world" используя инструмент echo`
 
-- [ ] **Step 7: Commit**
+Ожидается: ассистент вызывает инструмент `echo` и включает возвращённый текст в свой ответ.
+
+- [ ] **Шаг 7: Коммит**
 
 ```bash
 git add docs/superpowers/plans/2026-03-10-mcp-tool-calling.md

@@ -1,40 +1,40 @@
-# MCP Tool Calling — Design Spec
+# MCP Tool Calling — Дизайн-спецификация
 
-**Date:** 2026-03-10
-**Scope:** Day 17 — Full MCP function calling integration
+**Дата:** 2026-03-10
+**Область:** День 17 — Полная интеграция MCP function calling
 
-## Goal
+## Цель
 
-Enable the CLI agent to call MCP tools in two ways:
-1. **LLM-driven** — the LLM decides when to call a tool via OpenRouter function calling API
-2. **Manual** — the user calls `/mcp call <tool> [json-args]` directly
+Дать CLI-агенту возможность вызывать MCP-инструменты двумя способами:
+1. **Через LLM** — LLM сам решает когда вызвать инструмент через OpenRouter function calling API
+2. **Вручную** — пользователь вызывает `/mcp call <инструмент> [json-аргументы]` напрямую
 
-Plus a visual indicator in the UI showing which tool is currently being invoked.
+Плюс визуальный индикатор в UI, показывающий какой инструмент сейчас вызывается.
 
-## Architecture & Data Flow
+## Архитектура и поток данных
 
 ```
-User: "который час?"
-  └→ Chat.tsx builds tools list from mcpManager.listTools()
+Пользователь: "который час?"
+  └→ Chat.tsx собирает список инструментов через mcpManager.listTools()
   └→ sendMessage(messages, tools=[get_time, echo, get_agent_info])
-       └→ OpenRouter API returns { tool_calls: [{ name: "get_time", id: "call_1" }] }
-  └→ UI shows "🔧 Вызов MCP: get_time..."
+       └→ OpenRouter API возвращает { tool_calls: [{ name: "get_time", id: "call_1" }] }
+  └→ UI показывает "🔧 Вызов MCP: get_time..."
   └→ mcpManager.callTool("get_time", {}) → "10 марта 2026, 14:32"
   └→ sendMessage(messages + tool_result, tools=[...])
-       └→ OpenRouter API returns "Сейчас 14:32, 10 марта 2026"
-  └→ Final answer shown in chat
+       └→ OpenRouter API возвращает "Сейчас 14:32, 10 марта 2026"
+  └→ Финальный ответ отображается в чате
 ```
 
-## Files Changed
+## Изменяемые файлы
 
-| File | Change |
-|------|--------|
-| `src/types/index.ts` | Add `ToolCall`, `tool` role to `Message`, `tool_call_id` field, extend `ApiResponse` |
-| `src/mcp/client.ts` | Add `callTool(name, args)` method |
-| `src/api/openrouter.ts` | Accept `tools` param, handle `tool_calls` in response |
-| `src/components/Chat.tsx` | Tool-loop logic, `activeMcpTool` state, `/mcp call` command, update `/help` |
+| Файл | Изменение |
+|------|-----------|
+| `src/types/index.ts` | Добавить `ToolCall`, роль `tool` в `Message`, поле `tool_call_id`, расширить `ApiResponse` |
+| `src/mcp/client.ts` | Добавить метод `callTool(name, args)` |
+| `src/api/openrouter.ts` | Принимать параметр `tools`, обрабатывать `tool_calls` в ответе |
+| `src/components/Chat.tsx` | Tool-loop логика, state `activeMcpTool`, команда `/mcp call`, обновление `/help` |
 
-## New Types (`src/types/index.ts`)
+## Новые типы (`src/types/index.ts`)
 
 ```ts
 export interface ToolCall {
@@ -43,10 +43,10 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
-// Message.role gains 'tool'
-// Message gains optional tool_call_id?: string
+// Message.role получает роль 'tool'
+// Message получает опциональное поле tool_call_id?: string
 
-// ApiResponse gains optional toolCalls?: ToolCall[]
+// ApiResponse получает опциональное поле toolCalls?: ToolCall[]
 ```
 
 ## MCPClientManager.callTool
@@ -55,74 +55,74 @@ export interface ToolCall {
 async callTool(name: string, args: Record<string, unknown>): Promise<string>
 ```
 
-- Throws if not connected
-- Returns the first `content[].text` from the MCP tool response
+- Бросает ошибку если не подключён
+- Возвращает первый `content[].text` из ответа MCP-инструмента
 
-## sendMessage Changes
+## Изменения sendMessage
 
-New optional parameter: `tools?: MCPTool[]`
+Новый опциональный параметр: `tools?: MCPTool[]`
 
-- When provided, converts MCPTool list to OpenRouter `tools` format:
+- Если передан — конвертирует список MCPTool в формат OpenRouter `tools`:
   ```json
   { "type": "function", "function": { "name": "...", "description": "...", "parameters": {...} } }
   ```
-- `ApiResponse.toolCalls` is populated when `finish_reason === "tool_calls"`
-- Tool result messages use `role: "tool"` with `tool_call_id`
+- `ApiResponse.toolCalls` заполняется когда `finish_reason === "tool_calls"`
+- Сообщения с результатом инструмента используют `role: "tool"` с `tool_call_id`
 
-## Tool-Loop in Chat.tsx
+## Tool-Loop в Chat.tsx
 
-Replaces single `sendMessage` call with a loop:
+Заменяет единственный вызов `sendMessage` на цикл:
 
 ```
 setActiveMcpTool(null)
-loop:
+цикл:
   response = sendMessage(messages, tools)
-  if response.toolCalls:
-    for each toolCall:
+  если response.toolCalls:
+    для каждого toolCall:
       setActiveMcpTool(toolCall.name)
       result = mcpManager.callTool(toolCall.name, toolCall.arguments)
-      append tool_result message
-  else:
-    save assistant message
-    break
+      добавить tool_result в messages
+  иначе:
+    сохранить ответ ассистента
+    выход из цикла
 setActiveMcpTool(null)
 ```
 
-Max iterations: 10 (prevent infinite loops).
+Максимум итераций: 10 (защита от бесконечных циклов).
 
-## UI Visualization
+## Визуализация в UI
 
-New state: `activeMcpTool: string | null`
+Новый state: `activeMcpTool: string | null`
 
-In the loading indicator area:
-- `isLoading && !activeMcpTool` → `[загрузка...]` (current behavior)
-- `isLoading && activeMcpTool` → `🔧 Вызов MCP: get_time...` (new)
+В зоне индикатора загрузки:
+- `isLoading && !activeMcpTool` → `[загрузка...]` (текущее поведение)
+- `isLoading && activeMcpTool` → `🔧 Вызов MCP: get_time...` (новое)
 
-## Manual Command `/mcp call`
+## Ручная команда `/mcp call`
 
 ```
 /mcp call get_time
 /mcp call echo {"message": "привет"}
 ```
 
-- Requires MCP to be connected (auto-connects if not)
-- Shows result in notification area
-- Parses optional JSON args; defaults to `{}`
+- Требует подключения к MCP (авто-подключается если не подключён)
+- Показывает результат в зоне уведомлений
+- Парсит опциональные JSON-аргументы; по умолчанию `{}`
 
-## Help Text Update
+## Обновление справки
 
-In `/help` output, the MCP section expands to:
+В выводе `/help` секция MCP расширяется до:
 
 ```
 📡 MCP:
-  /mcp                         - подключиться и показать инструменты
-  /mcp disconnect              - отключиться от сервера
-  /mcp call <tool>             - вызвать инструмент вручную
-  /mcp call <tool> <json>      - вызвать инструмент с параметрами
+  /mcp                           - подключиться и показать инструменты
+  /mcp disconnect                - отключиться от сервера
+  /mcp call <инструмент>         - вызвать инструмент вручную
+  /mcp call <инструмент> <json>  - вызвать инструмент с параметрами
 ```
 
-## Constraints
+## Ограничения
 
-- MCP must be connected for LLM tool calling to work (auto-connect on first user message if tools available, or warn)
-- Tool calling only activates if MCP is connected; otherwise normal chat
-- `role: "tool"` messages are not persisted to session history (they are ephemeral within the tool-loop)
+- MCP должен быть подключён для LLM tool calling (авто-подключение при первом сообщении если инструменты доступны)
+- Tool calling активируется только если MCP подключён; иначе — обычный чат
+- Сообщения с `role: "tool"` НЕ сохраняются в историю сессии (они живут только внутри tool-loop)
