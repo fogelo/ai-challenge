@@ -1285,8 +1285,10 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   /strategy <номер>         - переключить стратегию
 
 📡 MCP:
-  /mcp                      - подключиться и показать инструменты
-  /mcp disconnect           - отключиться от сервера
+  /mcp                           - подключиться и показать инструменты
+  /mcp disconnect                - отключиться от сервера
+  /mcp call <инструмент>         - вызвать инструмент вручную
+  /mcp call <инструмент> <json>  - вызвать инструмент с параметрами
       `.trim();
 
       setNotification(helpText);
@@ -1317,6 +1319,49 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     if (trimmed === '/mcp disconnect') {
       await mcpManager.disconnect();
       setNotification('🔌 MCP отключён');
+      return true;
+    }
+
+    if (trimmed.startsWith('/mcp call')) {
+      const rest = trimmed.slice('/mcp call'.length).trim();
+      if (!rest) {
+        setNotification(
+          'Использование: /mcp call <инструмент> [json-аргументы]\n' +
+          'Пример: /mcp call get_time\n' +
+          'Пример: /mcp call echo {"message":"привет"}'
+        );
+        return true;
+      }
+
+      // Парсинг: первый токен = имя инструмента, остаток = опциональные JSON-аргументы
+      const spaceIdx = rest.indexOf(' ');
+      const toolName = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
+      const argsStr = spaceIdx === -1 ? '' : rest.slice(spaceIdx + 1).trim();
+
+      let args: Record<string, unknown> = {};
+      if (argsStr) {
+        try {
+          args = JSON.parse(argsStr) as Record<string, unknown>;
+        } catch {
+          setNotification(`❌ Неверный JSON: ${argsStr}`);
+          return true;
+        }
+      }
+
+      try {
+        if (!mcpManager.isConnected()) {
+          setNotification('⏳ Подключение к MCP серверу...');
+          await mcpManager.connect();
+        }
+
+        setNotification(`⏳ Вызов инструмента: ${toolName}...`);
+        const result = await mcpManager.callTool(toolName, args);
+        setNotification(`🔧 ${toolName}:\n\n${result}`);
+      } catch (err) {
+        setNotification(
+          `❌ Ошибка вызова инструмента: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
       return true;
     }
 
