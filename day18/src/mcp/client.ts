@@ -32,22 +32,27 @@ export class MCPClientManager {
     });
 
     this.client = new Client({
-      name: 'day16-cli-client',
+      name: 'day18-cli-client',
       version: '1.0.0',
     });
 
     await this.client.connect(this.transport);
   }
 
+  // Инструменты, скрытые от LLM (используются только внутренним кодом)
+  private static readonly INTERNAL_TOOLS = new Set(['check_fired_reminders']);
+
   async listTools(): Promise<MCPTool[]> {
     if (!this.client) throw new Error('Не подключён к MCP серверу');
 
     const result = await this.client.listTools();
-    return result.tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
-    }));
+    return result.tools
+      .filter((tool) => !MCPClientManager.INTERNAL_TOOLS.has(tool.name))
+      .map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
+      }));
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<string> {

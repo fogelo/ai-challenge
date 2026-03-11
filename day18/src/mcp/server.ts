@@ -4,6 +4,15 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { execSync } from 'child_process';
 import { get as httpsGet } from 'https';
+import { randomUUID } from 'crypto';
+import {
+  addReminder,
+  loadReminders,
+  updateReminderStatus,
+  getFiredReminders,
+  ReminderScheduler,
+} from '../reminders/index.js';
+import { Reminder } from '../types/index.js';
 
 function fetchText(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -21,9 +30,11 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 const server = new McpServer({
-  name: 'day17-local-server',
-  version: '2.0.0',
+  name: 'day18-local-server',
+  version: '3.0.0',
 });
+
+const scheduler = new ReminderScheduler();
 
 // ─── Утилиты ───────────────────────────────────────────────────────────────
 
@@ -225,9 +236,121 @@ server.registerTool(
   }
 );
 
+// ─── Напоминания ───────────────────────────────────────────────────────────
+
+server.registerTool(
+  'create_reminder',
+  {
+    description: 'Создаёт одиночное напоминание, которое сработает через указанное количество минут',
+    inputSchema: {
+      text: z.string().describe('Текст напоминания'),
+      minutes: z.number().int().positive().describe('Через сколько минут напомнить'),
+    },
+  },
+  async ({ text, minutes }) => {
+    const now = new Date();
+    const scheduledAt = new Date(now.getTime() + minutes * 60 * 1000);
+    const reminder: Reminder = {
+      id: randomUUID(),
+      text,
+      createdAt: now.toISOString(),
+      scheduledAt: scheduledAt.toISOString(),
+      status: 'pending',
+    };
+    await addReminder(reminder);
+    scheduler.schedule(reminder.id, minutes * 60 * 1000);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `✅ Напоминание создано: "${text}"\nСработает в: ${scheduledAt.toLocaleString('ru-RU')}\nID: ${reminder.id}`,
+        },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  'list_reminders',
+  {
+    description: 'Возвращает список всех напоминаний со статусами',
+    inputSchema: {},
+  },
+  async () => {
+    const reminders = await loadReminders();
+    if (reminders.length === 0) {
+      return { content: [{ type: 'text', text: 'Напоминаний нет.' }] };
+    }
+    const statusIcon: Record<Reminder['status'], string> = {
+      pending: '⏳',
+      fired: '🔔',
+      shown: '✓',
+      cancelled: '✗',
+    };
+    const lines = reminders.map(
+      (r) =>
+        `${statusIcon[r.status]} [${r.status}] "${r.text}"\n  Время: ${new Date(r.scheduledAt).toLocaleString('ru-RU')}\n  ID: ${r.id}`
+    );
+    return { content: [{ type: 'text', text: lines.join('\n\n') }] };
+  }
+);
+
+server.registerTool(
+  'cancel_reminder',
+  {
+    description: 'Отменяет ожидающее напоминание по ID',
+    inputSchema: {
+      id: z.string().describe('ID напоминания'),
+    },
+  },
+  async ({ id }) => {
+    const reminders = await loadReminders();
+    const reminder = reminders.find((r) => r.id === id);
+
+    if (!reminder) {
+      return { content: [{ type: 'text', text: `❌ Напоминание не найдено: ${id}` }] };
+    }
+    if (reminder.status !== 'pending') {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ Нельзя отменить напоминание со статусом "${reminder.status}"`,
+          },
+        ],
+      };
+    }
+
+    scheduler.cancel(id);
+    await updateReminderStatus(id, 'cancelled');
+    return { content: [{ type: 'text', text: `✅ Напоминание отменено: "${reminder.text}"` }] };
+  }
+);
+
+// Только для внутреннего polling из Chat.tsx — не показывается LLM через listTools()
+server.registerTool(
+  'check_fired_reminders',
+  {
+    description: 'Возвращает напоминания которые сработали но ещё не показаны. Только для внутреннего polling.',
+    inputSchema: {},
+  },
+  async () => {
+    const fired = await getFiredReminders();
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(fired),
+        },
+      ],
+    };
+  }
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 
 const transport = new StdioServerTransport();
 (async () => {
+  await scheduler.initialize();
   await server.connect(transport);
 })();
