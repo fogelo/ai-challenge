@@ -263,3 +263,11 @@ export interface BranchingState extends BaseStrategyState {
  * Union type for all strategy states
  */
 export type StrategyState = SlidingWindowState | StickyFactsState | BranchingState;
+
+export interface Reminder {
+  id: string;
+  text: string;
+  createdAt: string;    // ISO 8601
+  scheduledAt: string;  // ISO 8601
+  status: 'pending' | 'fired' | 'shown' | 'cancelled';
+}
