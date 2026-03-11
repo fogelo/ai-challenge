@@ -225,6 +225,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [mcpManager] = useState(() => new MCPClientManager());
   const [activeMcpTool, setActiveMcpTool] = useState<string | null>(null);
   const isPollingRef = useRef(false);
+  const [isMcpConnected, setIsMcpConnected] = useState(false);
 
   async function performSummarization(forced: boolean = false): Promise<void> {
     const config = configManager.getSummarizationConfig();
@@ -1316,6 +1317,11 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    if (trimmed === '/remind cancel') {
+      setNotification('Использование: /remind cancel <id>');
+      return true;
+    }
+
     if (trimmed.startsWith('/remind cancel ')) {
       const id = trimmed.slice('/remind cancel '.length).trim();
       if (!id) {
@@ -1346,7 +1352,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       const text = args.slice(firstSpace + 1).trim();
       const minutes = parseInt(minutesStr, 10);
 
-      if (isNaN(minutes) || !Number.isInteger(minutes)) {
+      if (isNaN(minutes)) {
         setNotification('Ошибка: укажите количество минут числом');
         return true;
       }
@@ -1385,6 +1391,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           }
           output += '\n';
         }
+        setIsMcpConnected(true);
         setNotification(output.trim());
       } catch (err) {
         setNotification(`❌ Ошибка MCP: ${err instanceof Error ? err.message : String(err)}`);
@@ -1394,6 +1401,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
     if (trimmed === '/mcp disconnect') {
       await mcpManager.disconnect();
+      setIsMcpConnected(false);
       setNotification('🔌 MCP отключён');
       return true;
     }
@@ -1814,9 +1822,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     };
   }, [conversation, sessionStats]);
 
-  // Polling for fired reminders every 10 seconds
+  // Polling for fired reminders every 10 seconds (runs when MCP is connected)
   useEffect(() => {
-    if (!mcpManager.isConnected()) return;
+    if (!isMcpConnected) return;
 
     const interval = setInterval(async () => {
       if (isPollingRef.current || !mcpManager.isConnected()) return;
@@ -1836,7 +1844,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     }, 10_000);
 
     return () => clearInterval(interval);
-  }, [mcpManager]);
+  }, [isMcpConnected]);
 
   return (
     <Box flexDirection="column" padding={1}>
