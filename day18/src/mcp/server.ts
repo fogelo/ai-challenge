@@ -248,25 +248,29 @@ server.registerTool(
     },
   },
   async ({ text, minutes }) => {
-    const now = new Date();
-    const scheduledAt = new Date(now.getTime() + minutes * 60 * 1000);
-    const reminder: Reminder = {
-      id: randomUUID(),
-      text,
-      createdAt: now.toISOString(),
-      scheduledAt: scheduledAt.toISOString(),
-      status: 'pending',
-    };
-    await addReminder(reminder);
-    scheduler.schedule(reminder.id, minutes * 60 * 1000);
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `✅ Напоминание создано: "${text}"\nСработает в: ${scheduledAt.toLocaleString('ru-RU')}\nID: ${reminder.id}`,
-        },
-      ],
-    };
+    try {
+      const now = new Date();
+      const scheduledAt = new Date(now.getTime() + minutes * 60 * 1000);
+      const reminder: Reminder = {
+        id: randomUUID(),
+        text,
+        createdAt: now.toISOString(),
+        scheduledAt: scheduledAt.toISOString(),
+        status: 'pending',
+      };
+      await addReminder(reminder);
+      scheduler.schedule(reminder.id, minutes * 60 * 1000);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `✅ Напоминание создано: "${text}"\nСработает в: ${scheduledAt.toLocaleString('ru-RU')}\nID: ${reminder.id}`,
+          },
+        ],
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
+    }
   }
 );
 
@@ -277,21 +281,25 @@ server.registerTool(
     inputSchema: {},
   },
   async () => {
-    const reminders = await loadReminders();
-    if (reminders.length === 0) {
-      return { content: [{ type: 'text', text: 'Напоминаний нет.' }] };
+    try {
+      const reminders = await loadReminders();
+      if (reminders.length === 0) {
+        return { content: [{ type: 'text', text: 'Напоминаний нет.' }] };
+      }
+      const statusIcon: Record<Reminder['status'], string> = {
+        pending: '⏳',
+        fired: '🔔',
+        shown: '✓',
+        cancelled: '✗',
+      };
+      const lines = reminders.map(
+        (r) =>
+          `${statusIcon[r.status]} [${r.status}] "${r.text}"\n  Время: ${new Date(r.scheduledAt).toLocaleString('ru-RU')}\n  ID: ${r.id}`
+      );
+      return { content: [{ type: 'text', text: lines.join('\n\n') }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
     }
-    const statusIcon: Record<Reminder['status'], string> = {
-      pending: '⏳',
-      fired: '🔔',
-      shown: '✓',
-      cancelled: '✗',
-    };
-    const lines = reminders.map(
-      (r) =>
-        `${statusIcon[r.status]} [${r.status}] "${r.text}"\n  Время: ${new Date(r.scheduledAt).toLocaleString('ru-RU')}\n  ID: ${r.id}`
-    );
-    return { content: [{ type: 'text', text: lines.join('\n\n') }] };
   }
 );
 
@@ -304,26 +312,30 @@ server.registerTool(
     },
   },
   async ({ id }) => {
-    const reminders = await loadReminders();
-    const reminder = reminders.find((r) => r.id === id);
+    try {
+      const reminders = await loadReminders();
+      const reminder = reminders.find((r) => r.id === id);
 
-    if (!reminder) {
-      return { content: [{ type: 'text', text: `❌ Напоминание не найдено: ${id}` }] };
-    }
-    if (reminder.status !== 'pending') {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `❌ Нельзя отменить напоминание со статусом "${reminder.status}"`,
-          },
-        ],
-      };
-    }
+      if (!reminder) {
+        return { content: [{ type: 'text', text: `❌ Напоминание не найдено: ${id}` }] };
+      }
+      if (reminder.status !== 'pending') {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ Нельзя отменить напоминание со статусом "${reminder.status}"`,
+            },
+          ],
+        };
+      }
 
-    scheduler.cancel(id);
-    await updateReminderStatus(id, 'cancelled');
-    return { content: [{ type: 'text', text: `✅ Напоминание отменено: "${reminder.text}"` }] };
+      scheduler.cancel(id);
+      await updateReminderStatus(id, 'cancelled');
+      return { content: [{ type: 'text', text: `✅ Напоминание отменено: "${reminder.text}"` }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
+    }
   }
 );
 
@@ -335,15 +347,19 @@ server.registerTool(
     inputSchema: {},
   },
   async () => {
-    const fired = await getFiredReminders();
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(fired),
-        },
-      ],
-    };
+    try {
+      const fired = await getFiredReminders();
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(fired),
+          },
+        ],
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
+    }
   }
 );
 
