@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput, Key } from 'ink';
 import { Conversation } from '../chat/conversation.js';
 import { SessionManager } from '../chat/session.js';
 import { sendMessage } from '../api/openrouter.js';
-import { Message, UsageInfo, SessionStats, MessageMetadata } from '../types/index.js';
+import { Message, UsageInfo, SessionStats, MessageMetadata, Reminder } from '../types/index.js';
 import { SKILLS, SkillName } from '../skills/index.js';
 import { ModelRegistry } from '../models/registry.js';
 import { ConfigManager } from '../models/config.js';
@@ -224,6 +224,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [invariantsLoaded, setInvariantsLoaded] = useState(false);
   const [mcpManager] = useState(() => new MCPClientManager());
   const [activeMcpTool, setActiveMcpTool] = useState<string | null>(null);
+  const isPollingRef = useRef(false);
 
   async function performSummarization(forced: boolean = false): Promise<void> {
     const config = configManager.getSummarizationConfig();
@@ -1289,9 +1290,84 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   /mcp disconnect                - отключиться от сервера
   /mcp call <инструмент>         - вызвать инструмент вручную
   /mcp call <инструмент> <json>  - вызвать инструмент с параметрами
+
+📅 Напоминания:
+  /remind                        - список всех напоминаний
+  /remind <минуты> <текст>       - создать напоминание
+  /remind cancel <id>            - отменить напоминание
       `.trim();
 
       setNotification(helpText);
+      return true;
+    }
+
+    // ─── /remind ──────────────────────────────────────────────────────────
+    if (trimmed === '/remind') {
+      if (!mcpManager.isConnected()) {
+        setNotification('❌ MCP не подключён. Сначала выполните /mcp');
+        return true;
+      }
+      try {
+        const result = await mcpManager.callTool('list_reminders', {});
+        setNotification(result);
+      } catch (err) {
+        setNotification(`❌ Ошибка: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
+
+    if (trimmed.startsWith('/remind cancel ')) {
+      const id = trimmed.slice('/remind cancel '.length).trim();
+      if (!id) {
+        setNotification('Использование: /remind cancel <id>');
+        return true;
+      }
+      if (!mcpManager.isConnected()) {
+        setNotification('❌ MCP не подключён. Сначала выполните /mcp');
+        return true;
+      }
+      try {
+        const result = await mcpManager.callTool('cancel_reminder', { id });
+        setNotification(result);
+      } catch (err) {
+        setNotification(`❌ Ошибка: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
+
+    if (trimmed.startsWith('/remind ')) {
+      const args = trimmed.slice('/remind '.length).trim();
+      const firstSpace = args.indexOf(' ');
+      if (firstSpace === -1) {
+        setNotification('Использование: /remind <минуты> <текст>\nПример: /remind 5 выпить воду');
+        return true;
+      }
+      const minutesStr = args.slice(0, firstSpace);
+      const text = args.slice(firstSpace + 1).trim();
+      const minutes = parseInt(minutesStr, 10);
+
+      if (isNaN(minutes) || !Number.isInteger(minutes)) {
+        setNotification('Ошибка: укажите количество минут числом');
+        return true;
+      }
+      if (minutes <= 0) {
+        setNotification('Ошибка: минуты должны быть больше 0');
+        return true;
+      }
+      if (!text) {
+        setNotification('Ошибка: текст напоминания не может быть пустым');
+        return true;
+      }
+      if (!mcpManager.isConnected()) {
+        setNotification('❌ MCP не подключён. Сначала выполните /mcp');
+        return true;
+      }
+      try {
+        const result = await mcpManager.callTool('create_reminder', { text, minutes });
+        setNotification(result);
+      } catch (err) {
+        setNotification(`❌ Ошибка: ${err instanceof Error ? err.message : String(err)}`);
+      }
       return true;
     }
 
@@ -1737,6 +1813,30 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       process.off('SIGINT', handleExit);
     };
   }, [conversation, sessionStats]);
+
+  // Polling for fired reminders every 10 seconds
+  useEffect(() => {
+    if (!mcpManager.isConnected()) return;
+
+    const interval = setInterval(async () => {
+      if (isPollingRef.current || !mcpManager.isConnected()) return;
+      isPollingRef.current = true;
+      try {
+        const raw = await mcpManager.callTool('check_fired_reminders', {});
+        const fired: Reminder[] = JSON.parse(raw);
+        if (fired.length > 0) {
+          const lines = fired.map((r) => `🔔 Напоминание: ${r.text}`).join('\n');
+          setNotification(lines);
+        }
+      } catch {
+        // Игнорируем ошибки polling
+      } finally {
+        isPollingRef.current = false;
+      }
+    }, 10_000);
+
+    return () => clearInterval(interval);
+  }, [mcpManager]);
 
   return (
     <Box flexDirection="column" padding={1}>
