@@ -264,6 +264,10 @@ export interface BranchingState extends BaseStrategyState {
  */
 export type StrategyState = SlidingWindowState | StickyFactsState | BranchingState;
 
+/**
+ * A one-shot reminder created by the user.
+ * Status lifecycle: pending → fired → shown | pending → cancelled
+ */
 export interface Reminder {
   id: string;
   text: string;
