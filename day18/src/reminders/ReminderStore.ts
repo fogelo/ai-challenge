@@ -53,7 +53,7 @@ export async function getFiredReminders(): Promise<Reminder[]> {
 
   if (fired.length === 0) return [];
 
-  // Атомарно переводим в shown
+  // Best-effort: переводим в shown (не атомарно — при сбое между чтением и записью может повториться)
   const updated = reminders.map((r) =>
     r.status === 'fired' ? { ...r, status: 'shown' as const } : r
   );
