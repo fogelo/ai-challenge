@@ -363,6 +363,46 @@ server.registerTool(
   }
 );
 
+// ─── Pipeline ──────────────────────────────────────────────────────────────
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+server.registerTool(
+  'search',
+  {
+    description: 'Получает текстовое содержимое веб-страницы по HTTPS URL. Возвращает очищенный от HTML текст (до 8000 символов). Используй как первый шаг пайплайна: search → summarize → saveToFile.',
+    inputSchema: {
+      url: z.string().describe('HTTPS URL страницы для анализа'),
+    },
+  },
+  async ({ url }) => {
+    try {
+      if (!url.startsWith('https://')) {
+        return { content: [{ type: 'text', text: '❌ Поддерживаются только HTTPS URL' }] };
+      }
+      const html = await fetchText(url);
+      const text = stripHtml(html).slice(0, 8000);
+      return { content: [{ type: 'text', text: text || '(пустая страница)' }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
+    }
+  }
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 
 const transport = new StdioServerTransport();
