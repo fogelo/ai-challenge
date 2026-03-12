@@ -6,6 +6,8 @@ import { execSync } from 'child_process';
 import { get as httpsGet } from 'https';
 import { get as httpGet } from 'http';
 import { randomUUID } from 'crypto';
+import { mkdir, writeFile } from 'fs/promises';
+import { join } from 'path';
 import {
   addReminder,
   loadReminders,
@@ -470,6 +472,28 @@ server.registerTool(
       const data = await response.json() as { choices: Array<{ message: { content: string } }> };
       const summary = data.choices?.[0]?.message?.content ?? '(пустой ответ)';
       return { content: [{ type: 'text', text: summary }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
+    }
+  }
+);
+
+server.registerTool(
+  'saveToFile',
+  {
+    description: 'Сохраняет текст в файл в папке ./output/. Используй как последний шаг пайплайна после summarize.',
+    inputSchema: {
+      filename: z.string().describe('Имя файла (например: result.txt, summary.md)'),
+      content: z.string().describe('Содержимое для сохранения'),
+    },
+  },
+  async ({ filename, content }) => {
+    try {
+      const outputDir = join(process.cwd(), 'output');
+      await mkdir(outputDir, { recursive: true });
+      const filePath = join(outputDir, filename);
+      await writeFile(filePath, content, 'utf-8');
+      return { content: [{ type: 'text', text: `✅ Сохранено: ${filePath}` }] };
     } catch (err) {
       return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
     }
