@@ -436,6 +436,10 @@ server.registerTool(
         return { content: [{ type: 'text', text: '❌ OPENROUTER_API_KEY не найден' }] };
       }
 
+      if (!text.trim()) {
+        return { content: [{ type: 'text', text: '❌ Текст для суммаризации не может быть пустым' }] };
+      }
+
       const userPrompt = instructions
         ? `${instructions}\n\nТекст:\n${text}`
         : `Текст:\n${text}`;
