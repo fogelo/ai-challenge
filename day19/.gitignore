@@ -7,4 +7,4 @@ config.json.backup
 .chat-history/
 .memory/
 .invariants/
-.task-state/
+.task-state/output/
