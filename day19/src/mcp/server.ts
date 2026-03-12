@@ -453,7 +453,7 @@ server.registerTool(
           'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'google/gemini-flash-1.5',
+          model: 'openai/gpt-4o-mini',
           messages: [
             {
               role: 'system',
