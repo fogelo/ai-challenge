@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { execSync } from 'child_process';
 import { get as httpsGet } from 'https';
+import { get as httpGet } from 'http';
 import { randomUUID } from 'crypto';
 import {
   addReminder,
@@ -16,11 +17,27 @@ import { Reminder } from '../types/index.js';
 
 function fetchText(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    httpsGet(url, { headers: { 'User-Agent': 'curl/7.0' } }, (res) => {
-      let data = '';
-      res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-      res.on('end', () => resolve(data));
-    }).on('error', reject);
+    const makeRequest = (currentUrl: string, redirectsLeft: number) => {
+      const getter = currentUrl.startsWith('https://') ? httpsGet : httpGet;
+      getter(currentUrl, { headers: { 'User-Agent': 'curl/7.0' } }, (res) => {
+        const { statusCode, headers } = res;
+        if ((statusCode === 301 || statusCode === 302 || statusCode === 307 || statusCode === 308) && headers.location) {
+          if (redirectsLeft === 0) { reject(new Error('Too many redirects')); return; }
+          const next = headers.location.startsWith('http') ? headers.location : new URL(headers.location, currentUrl).toString();
+          res.resume();
+          makeRequest(next, redirectsLeft - 1);
+          return;
+        }
+        if (!statusCode || statusCode < 200 || statusCode >= 300) {
+          reject(new Error(`HTTP ${statusCode ?? 'unknown'}`));
+          return;
+        }
+        let data = '';
+        res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        res.on('end', () => resolve(data));
+      }).on('error', reject);
+    };
+    makeRequest(url, 5);
   });
 }
 
