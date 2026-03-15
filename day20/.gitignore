@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.log
+config.json
+config.json.backup
+.chat-history/
+.memory/
+.invariants/
+.task-state/output/
