@@ -51,6 +51,7 @@ export class MCPClientManager {
         const transport = new StdioClientTransport({
           command: 'node',
           args: [join(__dirname, config.file)],
+          env: process.env as Record<string, string>,
         });
         const client = new Client({
           name: `cli-client-${config.name}`,
