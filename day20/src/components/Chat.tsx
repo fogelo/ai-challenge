@@ -1386,22 +1386,33 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
     // MCP commands
     if (trimmed === '/mcp' || trimmed === '/mcp connect') {
-      setNotification('⏳ Подключение к MCP серверу...');
+      setNotification('⏳ Подключение к MCP серверам...');
       try {
         await mcpManager.connect();
         const tools = await mcpManager.listTools();
-        let output = `✅ MCP сервер подключён\n\nДоступные инструменты (${tools.length}):\n\n`;
+
+        // Группировать инструменты по серверам
+        const byServer = new Map<string, MCPTool[]>();
         for (const tool of tools) {
-          output += `🔧 ${tool.name}\n`;
-          if (tool.description) {
-            output += `   ${tool.description}\n`;
+          const list = byServer.get(tool.serverName) ?? [];
+          list.push(tool);
+          byServer.set(tool.serverName, list);
+        }
+
+        let output = `✅ MCP серверы подключены (${byServer.size})\n\n`;
+        for (const [serverName, serverTools] of byServer) {
+          output += `📡 ${serverName} (${serverTools.length}):\n`;
+          for (const tool of serverTools) {
+            output += `  🔧 ${tool.name}\n`;
+            if (tool.description) output += `     ${tool.description.slice(0, 60)}\n`;
           }
           output += '\n';
         }
+
         setIsMcpConnected(true);
-        setNotification(output.trim());
+        setNotification(output);
       } catch (err) {
-        setNotification(`❌ Ошибка MCP: ${err instanceof Error ? err.message : String(err)}`);
+        setNotification(`❌ Ошибка подключения: ${err instanceof Error ? err.message : String(err)}`);
       }
       return true;
     }
