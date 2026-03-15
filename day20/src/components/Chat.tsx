@@ -224,6 +224,12 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [invariantsLoaded, setInvariantsLoaded] = useState(false);
   const [mcpManager] = useState(() => new MCPClientManager());
   const [activeMcpTool, setActiveMcpTool] = useState<string | null>(null);
+  interface ToolCallLog {
+    serverName: string;
+    toolName: string;
+    result: string;
+  }
+  const [toolCallLogs, setToolCallLogs] = useState<ToolCallLog[]>([]);
   const isPollingRef = useRef(false);
   const [isMcpConnected, setIsMcpConnected] = useState(false);
 
@@ -554,6 +560,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     // Clear command
     if (trimmed === '/clear') {
       conversation.clear();
+      setToolCallLogs([]);
       setSessionStats({
         totalTokens: 0,
         totalPromptTokens: 0,
@@ -1552,6 +1559,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         if (await handleCommand(userInput)) return;
 
         setError(null);
+        setToolCallLogs([]); // Очистить логи ДО добавления нового сообщения пользователя
         await conversation.addUserMessage(userInput);
         setMessages(conversation.getHistory());
         setIsLoading(true);
@@ -1614,7 +1622,8 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
               // Выполнить каждый вызов инструмента и добавить результаты в локальный контекст
               for (const toolCall of apiResponse.toolCalls) {
-                setActiveMcpTool(toolCall.name);
+                const serverForTool = mcpManager.getServerForTool(toolCall.name) ?? 'unknown';
+                setActiveMcpTool(`[${serverForTool}] ${toolCall.name}`);
 
                 let toolResult: string;
                 try {
@@ -1622,6 +1631,17 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
                 } catch (err) {
                   toolResult = `Ошибка вызова инструмента: ${err instanceof Error ? err.message : String(err)}`;
                 }
+
+                // Добавить запись в лог инструментов (только для UI, не для LLM)
+                const serverForLog = mcpManager.getServerForTool(toolCall.name) ?? 'unknown';
+                setToolCallLogs((prev) => [
+                  ...prev,
+                  {
+                    serverName: serverForLog,
+                    toolName: toolCall.name,
+                    result: toolResult.slice(0, 120),
+                  },
+                ]);
 
                 // Сообщение role: 'tool' добавляется только в loopMessages, НЕ в историю разговора
                 loopMessages.push({
@@ -1913,6 +1933,18 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
               {msg.role === 'user' ? 'User' : 'Assistant'}:{' '}
             </Text>
             <Text>{msg.content}</Text>
+          </Box>
+        ))}
+        {toolCallLogs.map((log, idx) => (
+          <Box key={`tool-log-${idx}`} marginBottom={1} flexDirection="column">
+            <Box>
+              <Text color="magenta">🔧 </Text>
+              <Text bold color="magenta">[{log.serverName}]</Text>
+              <Text color="magenta"> › {log.toolName}</Text>
+            </Box>
+            <Box marginLeft={3}>
+              <Text dimColor>{log.result.length > 100 ? log.result.slice(0, 100) + '...' : log.result}</Text>
+            </Box>
           </Box>
         ))}
         {isLoading && (
