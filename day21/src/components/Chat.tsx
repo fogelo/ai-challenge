@@ -17,6 +17,8 @@ import { InterviewFlow } from '../profile/index.js';
 import { STATE_INDICATORS, ALLOWED_TRANSITIONS, STATE_INSTRUCTIONS, TaskState } from '../taskstate/index.js';
 import { InvariantManager } from '../invariants/index.js';
 import { MCPClientManager, MCPTool } from '../mcp/index.js';
+import { RagManager } from '../rag/index.js';
+import path from 'path';
 
 interface ChatProps {
   modelRegistry: ModelRegistry;
@@ -223,6 +225,15 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [invariantManager] = useState(() => new InvariantManager('.invariants'));
   const [invariantsLoaded, setInvariantsLoaded] = useState(false);
   const [mcpManager] = useState(() => new MCPClientManager());
+  const [ragManager] = useState(() => new RagManager({
+    sourcePath: path.resolve('for_rag/Архитектура'),
+    outputPath: path.resolve('rag-data'),
+    embeddingModel: 'nomic-embed-text',
+    ollamaUrl: 'http://localhost:11434',
+    topK: 3,
+    chunkSize: 500,
+    chunkOverlap: 100,
+  }));
   const [activeMcpTool, setActiveMcpTool] = useState<string | null>(null);
   interface ToolCallLog {
     serverName: string;
@@ -1237,6 +1248,85 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // RAG commands
+    if (trimmed.startsWith('/rag')) {
+      const args = trimmed.slice(4).trim();
+
+      if (args === 'index' || args === '') {
+        if (args === 'index') {
+          setNotification('⏳ Индексирую документы... (это займёт несколько минут)');
+          try {
+            await ragManager.index();
+            setNotification('✅ Индекс построен. Используй /rag <запрос> для поиска.');
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            setNotification(`❌ ${msg}`);
+          }
+          return true;
+        }
+        setNotification(
+          'RAG команды:\n' +
+          '  /rag index             — индексировать документы\n' +
+          '  /rag <запрос>          — поиск (structural)\n' +
+          '  /rag <запрос> --fixed  — поиск (fixed)\n' +
+          '  /rag compare <запрос>  — сравнить стратегии'
+        );
+        return true;
+      }
+
+      if (args.startsWith('compare ')) {
+        const query = args.slice(8).trim();
+        if (!query) {
+          setNotification('Использование: /rag compare <запрос>');
+          return true;
+        }
+        try {
+          const { fixed, structural } = await ragManager.compare(query);
+          const fmt = (results: typeof fixed) =>
+            results.map((r, i) =>
+              `${i + 1}. [${r.score.toFixed(2)}] ${r.chunk.title} / ${r.chunk.file}\n   ${r.chunk.text.slice(0, 150).replace(/\n/g, ' ')}...`
+            ).join('\n\n');
+
+          setNotification(
+            `🔍 Сравнение стратегий: "${query}"\n\n` +
+            `── STRUCTURAL ──────────────────────\n${fmt(structural)}\n\n` +
+            `── FIXED ───────────────────────────\n${fmt(fixed)}`
+          );
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          setNotification(`❌ ${msg}`);
+        }
+        return true;
+      }
+
+      // /rag <query> [--fixed]
+      const useFixed = args.endsWith('--fixed');
+      const query = useFixed ? args.slice(0, -7).trim() : args;
+      const strategy = useFixed ? 'fixed' : 'structural';
+
+      if (!query) {
+        setNotification('Использование: /rag <запрос>');
+        return true;
+      }
+
+      try {
+        const results = await ragManager.search(query, strategy);
+        const output = results
+          .map((r, i) =>
+            `${i + 1}. [${r.score.toFixed(2)}] ${r.chunk.title} / ${r.chunk.file}\n` +
+            (r.chunk.section ? `   section: "${r.chunk.section}"\n` : '') +
+            `   "${r.chunk.text.slice(0, 200).replace(/\n/g, ' ')}..."`
+          )
+          .join('\n\n');
+
+        setNotification(`🔍 RAG поиск (${strategy}): "${query}"\n\n${output}`);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        setNotification(`❌ ${msg}`);
+      }
+      return true;
+    }
+
     // Invariants commands
     if (trimmed.startsWith('/invariants')) {
       const args = trimmed.split(' ').slice(1);
@@ -1298,6 +1388,12 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   /mcp disconnect                - отключиться от сервера
   /mcp call <инструмент>         - вызвать инструмент вручную
   /mcp call <инструмент> <json>  - вызвать инструмент с параметрами
+
+🔍 RAG:
+  /rag index             — индексировать документы
+  /rag <запрос>          — поиск по базе знаний
+  /rag <запрос> --fixed  — поиск (fixed стратегия)
+  /rag compare <запрос>  — сравнить две стратегии
 
 📅 Напоминания:
   /remind                        - список всех напоминаний
