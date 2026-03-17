@@ -1707,7 +1707,15 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             setMessages(conversation.getHistory());
           } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
+            setError(`RAG error: ${msg}`);
             setNotification(`❌ RAG ошибка: ${msg}`);
+            // Add error as assistant message to keep conversation balanced
+            const errorMetadata: MessageMetadata = {
+              model: currentModel,
+              timestamp: new Date().toISOString(),
+            };
+            await conversation.addAssistantMessage(`❌ Ошибка RAG: ${msg}`, errorMetadata);
+            setMessages(conversation.getHistory());
           } finally {
             setIsLoading(false);
           }
