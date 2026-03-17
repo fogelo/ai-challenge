@@ -44,10 +44,16 @@ async function buildChunksForFile(
   const relPath = getRelativePath(filePath, sourcePath);
   const file = path.basename(filePath);
 
+  const MAX_EMBED_CHARS = 2000;
+
   const rawChunks: Array<{ text: string; section: string }> =
     strategy === 'fixed'
       ? fixedChunk(text, config.chunkSize, config.chunkOverlap).map((t) => ({ text: t, section: '' }))
-      : structuralChunk(text).map((c) => ({ text: c.text, section: c.heading }));
+      : structuralChunk(text).flatMap((c) =>
+          c.text.length <= MAX_EMBED_CHARS
+            ? [{ text: c.text, section: c.heading }]
+            : fixedChunk(c.text, config.chunkSize, config.chunkOverlap).map((t) => ({ text: t, section: c.heading }))
+        );
 
   const chunks: Chunk[] = [];
   for (let i = 0; i < rawChunks.length; i++) {
