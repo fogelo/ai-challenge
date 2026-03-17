@@ -1313,10 +1313,18 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       const args = trimmed.slice(4).trim();
 
       if (args === 'test') {
+        if (isLoading) {
+          setNotification('⏳ Дождитесь завершения текущей операции.');
+          return true;
+        }
         try {
           const questions = await loadControlQuestions(
             path.resolve('rag-data', 'control-questions.json')
           );
+          if (questions.length === 0) {
+            setNotification('❌ Файл control-questions.json пуст. Добавьте вопросы и попробуйте снова.');
+            return true;
+          }
           setRagTestQuestions(questions);
           setRagTestResults([]);
           setRagTestStep(0);
@@ -1711,7 +1719,6 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
 
         // Handle rag test mode — advance on Enter (even empty input)
         if (ragTestMode) {
-          setInput('');
           const nextStep = ragTestStep + 1;
           setRagTestStep(nextStep);
           if (nextStep >= ragTestQuestions.length) {
