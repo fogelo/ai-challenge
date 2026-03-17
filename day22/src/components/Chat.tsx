@@ -17,7 +17,8 @@ import { InterviewFlow } from '../profile/index.js';
 import { STATE_INDICATORS, ALLOWED_TRANSITIONS, STATE_INSTRUCTIONS, TaskState } from '../taskstate/index.js';
 import { InvariantManager } from '../invariants/index.js';
 import { MCPClientManager, MCPTool } from '../mcp/index.js';
-import { RagManager } from '../rag/index.js';
+import { RagManager, ragQuery } from '../rag/index.js';
+import type { RagAnswer } from '../rag/index.js';
 import path from 'path';
 
 interface ChatProps {
@@ -222,6 +223,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [interviewMode, setInterviewMode] = useState(false);
   const [interviewStep, setInterviewStep] = useState(0);
   const [interviewAnswers, setInterviewAnswers] = useState<Record<string, any>>({});
+  const [ragMode, setRagMode] = useState(false);
   const [invariantManager] = useState(() => new InvariantManager('.invariants'));
   const [invariantsLoaded, setInvariantsLoaded] = useState(false);
   const [mcpManager] = useState(() => new MCPClientManager());
@@ -1252,6 +1254,18 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     if (trimmed.startsWith('/rag')) {
       const args = trimmed.slice(4).trim();
 
+      if (args === 'mode on') {
+        setRagMode(true);
+        setNotification('🔍 RAG-режим включён. Все ответы будут дополнены источниками из базы знаний.');
+        return true;
+      }
+
+      if (args === 'mode off') {
+        setRagMode(false);
+        setNotification('💬 RAG-режим выключен. Агент отвечает из общих знаний.');
+        return true;
+      }
+
       if (args === 'index' || args === '') {
         if (args === 'index') {
           setNotification('⏳ Индексирую документы... (это займёт несколько минут)');
@@ -1266,6 +1280,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         }
         setNotification(
           'RAG команды:\n' +
+          '  /rag mode on           — включить RAG-режим для всего чата\n' +
+          '  /rag mode off          — выключить RAG-режим\n' +
+          '  /rag test              — запустить 10 контрольных вопросов\n' +
           '  /rag index             — индексировать документы\n' +
           '  /rag <запрос>          — поиск (structural)\n' +
           '  /rag <запрос> --fixed  — поиск (fixed)\n' +
@@ -1390,6 +1407,8 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   /mcp call <инструмент> <json>  - вызвать инструмент с параметрами
 
 🔍 RAG:
+  /rag mode on/off       — включить/выключить RAG-режим
+  /rag test              — запустить 10 контрольных вопросов
   /rag index             — индексировать документы
   /rag <запрос>          — поиск по базе знаний
   /rag <запрос> --fixed  — поиск (fixed стратегия)
@@ -1664,6 +1683,36 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         }
 
         if (await handleCommand(userInput)) return;
+
+        // RAG-режим: перехватываем сообщение и используем RAG-пайплайн
+        if (ragMode) {
+          setIsLoading(true);
+          try {
+            await conversation.addUserMessage(userInput);
+            setMessages(conversation.getHistory());
+            const ragAnswer = await ragQuery(userInput, ragManager, currentModel);
+            const sourcesBlock =
+              ragAnswer.sources.length > 0
+                ? '\n\n─────────────────\n📚 Источники:\n' +
+                  ragAnswer.sources
+                    .map((s) => `• ${s.title}${s.section ? ` — ${s.section}` : ''} (${s.score.toFixed(2)})`)
+                    .join('\n')
+                : '';
+            const fullAnswer = ragAnswer.answer + sourcesBlock;
+            const metadata: MessageMetadata = {
+              model: currentModel,
+              timestamp: new Date().toISOString(),
+            };
+            await conversation.addAssistantMessage(fullAnswer, metadata);
+            setMessages(conversation.getHistory());
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            setNotification(`❌ RAG ошибка: ${msg}`);
+          } finally {
+            setIsLoading(false);
+          }
+          return;
+        }
 
         setError(null);
         setToolCallLogs([]); // Очистить логи ДО добавления нового сообщения пользователя
