@@ -17,8 +17,8 @@ import { InterviewFlow } from '../profile/index.js';
 import { STATE_INDICATORS, ALLOWED_TRANSITIONS, STATE_INSTRUCTIONS, TaskState } from '../taskstate/index.js';
 import { InvariantManager } from '../invariants/index.js';
 import { MCPClientManager, MCPTool } from '../mcp/index.js';
-import { RagManager, ragQuery } from '../rag/index.js';
-import type { RagAnswer } from '../rag/index.js';
+import { RagManager, ragQuery, loadControlQuestions } from '../rag/index.js';
+import type { RagAnswer, RagTestResult, ControlQuestion } from '../rag/index.js';
 import path from 'path';
 
 interface ChatProps {
@@ -224,6 +224,10 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [interviewStep, setInterviewStep] = useState(0);
   const [interviewAnswers, setInterviewAnswers] = useState<Record<string, any>>({});
   const [ragMode, setRagMode] = useState(false);
+  const [ragTestMode, setRagTestMode] = useState(false);
+  const [ragTestStep, setRagTestStep] = useState(0);
+  const [ragTestResults, setRagTestResults] = useState<RagTestResult[]>([]);
+  const [ragTestQuestions, setRagTestQuestions] = useState<ControlQuestion[]>([]);
   const [invariantManager] = useState(() => new InvariantManager('.invariants'));
   const [invariantsLoaded, setInvariantsLoaded] = useState(false);
   const [mcpManager] = useState(() => new MCPClientManager());
@@ -303,6 +307,60 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       setIsSummarizing(false);
     }
   }
+
+  // RAG test: run a single test step (fetch both RAG and non-RAG answers)
+  const runRagTestStep = async (questions: ControlQuestion[], step: number) => {
+    if (step >= questions.length) {
+      setRagTestMode(false);
+      setNotification('✅ Тест завершён.');
+      return;
+    }
+    const q = questions[step];
+    setIsLoading(true);
+    try {
+      const [withoutRagResponse, withRagAnswer] = await Promise.all([
+        sendMessage([{ role: 'user', content: q.question }], currentModel),
+        ragQuery(q.question, ragManager, currentModel),
+      ]);
+
+      const result: RagTestResult = {
+        controlQuestion: q,
+        answerWithoutRag: withoutRagResponse.content,
+        answerWithRag: withRagAnswer.answer,
+        sources: withRagAnswer.sources,
+      };
+
+      setRagTestResults((prev) => [...prev, result]);
+
+      const sourcesBlock =
+        withRagAnswer.sources.length > 0
+          ? '\n\n📚 Источники (RAG):\n' +
+            withRagAnswer.sources
+              .map((s) => `• ${s.title}${s.section ? ` — ${s.section}` : ''} (${s.score.toFixed(2)})`)
+              .join('\n')
+          : '';
+
+      const nextHint =
+        step < questions.length - 1
+          ? `\n\n─────────────────\nНажмите Enter для вопроса ${step + 2}/${questions.length}`
+          : '\n\n─────────────────\nНажмите Enter для завершения теста';
+
+      setNotification(
+        `🧪 Вопрос ${step + 1}/${questions.length}: ${q.question}\n\n` +
+        `❓ Ожидаемый ответ:\n${q.expectedAnswer}\n\n` +
+        `💬 БЕЗ RAG:\n${withoutRagResponse.content}\n\n` +
+        `🔍 С RAG:\n${withRagAnswer.answer}` +
+        sourcesBlock +
+        nextHint
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setNotification(`❌ Ошибка на вопросе ${step + 1}: ${msg}`);
+      setRagTestMode(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Function to automatically send a message to the agent
   async function sendAutoMessage(message: string) {
@@ -1254,6 +1312,28 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     if (trimmed.startsWith('/rag')) {
       const args = trimmed.slice(4).trim();
 
+      if (args === 'test') {
+        try {
+          const questions = await loadControlQuestions(
+            path.resolve('rag-data', 'control-questions.json')
+          );
+          setRagTestQuestions(questions);
+          setRagTestResults([]);
+          setRagTestStep(0);
+          setRagTestMode(true);
+          setNotification(
+            `🧪 Тест RAG: ${questions.length} вопросов.\n` +
+            `Нажмите Enter для следующего вопроса.\n\n` +
+            `Загружаю первый вопрос...`
+          );
+          runRagTestStep(questions, 0);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          setNotification(`❌ Не удалось загрузить вопросы: ${msg}`);
+        }
+        return true;
+      }
+
       if (args === 'mode on') {
         setRagMode(true);
         setNotification('🔍 RAG-режим включён. Все ответы будут дополнены источниками из базы знаний.');
@@ -1623,11 +1703,25 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     if (isLoading) return;
 
     if (key.return) {
-      if (input.trim()) {
+      if (input.trim() || ragTestMode) {
         const userInput = input.trim();
         setInput('');
         setNotification(null);
         setLastResponseMetrics(null);
+
+        // Handle rag test mode — advance on Enter (even empty input)
+        if (ragTestMode) {
+          setInput('');
+          const nextStep = ragTestStep + 1;
+          setRagTestStep(nextStep);
+          if (nextStep >= ragTestQuestions.length) {
+            setRagTestMode(false);
+            setNotification('✅ Тест завершён.');
+          } else {
+            runRagTestStep(ragTestQuestions, nextStep);
+          }
+          return;
+        }
 
         // Handle interview mode
         if (interviewMode) {
