@@ -59,3 +59,20 @@ export async function loadControlQuestions(resolvedPath: string): Promise<Contro
   const raw = await fs.readFile(resolvedPath, 'utf-8');
   return JSON.parse(raw) as ControlQuestion[];
 }
+
+export async function rewriteQuery(question: string, model: string): Promise<string> {
+  const systemPrompt =
+    'Перефразируй запрос для семантического поиска по технической документации.\n' +
+    'Верни только переформулированный запрос, без пояснений.';
+  try {
+    const response = await sendMessage(
+      [{ role: 'user', content: question }],
+      model,
+      systemPrompt,
+    );
+    return response.content.trim();
+  } catch (err) {
+    console.error('[rewriteQuery] LLM error, using original query:', err);
+    return question;
+  }
+}
