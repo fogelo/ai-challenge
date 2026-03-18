@@ -76,3 +76,63 @@ export async function rewriteQuery(question: string, model: string): Promise<str
     return question;
   }
 }
+
+import { filterByThreshold, DEFAULT_FILTER_OPTIONS } from './reranker.js';
+import type { FilterOptions } from './reranker.js';
+
+export interface RagAnswerEnhanced extends RagAnswer {
+  rewrittenQuery?: string;
+  chunksBeforeFilter: number;
+  chunksAfterFilter: number;
+}
+
+export async function ragQueryEnhanced(
+  question: string,
+  ragManager: RagManager,
+  model: string,
+  options: { withFilter: boolean; withRewrite: boolean } & Partial<FilterOptions>,
+): Promise<RagAnswerEnhanced> {
+  const resolved = {
+    ...DEFAULT_FILTER_OPTIONS,
+    withFilter: options.withFilter,
+    withRewrite: options.withRewrite,
+    ...(options.threshold !== undefined && { threshold: options.threshold }),
+    ...(options.topKInitial !== undefined && { topKInitial: options.topKInitial }),
+    ...(options.topKFinal !== undefined && { topKFinal: options.topKFinal }),
+  };
+
+  let searchQuery = question;
+  let rewrittenQuery: string | undefined;
+
+  if (resolved.withRewrite) {
+    rewrittenQuery = await rewriteQuery(question, model);
+    searchQuery = rewrittenQuery;
+  }
+
+  const results = await ragManager.search(searchQuery, 'structural', resolved.topKInitial);
+  const chunksBeforeFilter = results.length;
+
+  let filtered = resolved.withFilter
+    ? filterByThreshold(results, resolved.threshold)
+    : results;
+  filtered = filtered.slice(0, resolved.topKFinal);
+  const chunksAfterFilter = filtered.length;
+
+  const systemPrompt = buildRagSystemPrompt(filtered);
+  const messages = [{ role: 'user' as const, content: question }];
+  const apiResponse = await sendMessage(messages, model, systemPrompt);
+
+  const sources: Source[] = filtered.map((r) => ({
+    title: r.chunk.title,
+    section: r.chunk.section,
+    score: r.score,
+  }));
+
+  return {
+    answer: apiResponse.content,
+    sources,
+    rewrittenQuery,
+    chunksBeforeFilter,
+    chunksAfterFilter,
+  };
+}
