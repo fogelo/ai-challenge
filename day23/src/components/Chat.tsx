@@ -17,8 +17,19 @@ import { InterviewFlow } from '../profile/index.js';
 import { STATE_INDICATORS, ALLOWED_TRANSITIONS, STATE_INSTRUCTIONS, TaskState } from '../taskstate/index.js';
 import { InvariantManager } from '../invariants/index.js';
 import { MCPClientManager, MCPTool } from '../mcp/index.js';
-import { RagManager, ragQuery, loadControlQuestions } from '../rag/index.js';
-import type { RagAnswer, RagTestResult, ControlQuestion } from '../rag/index.js';
+import {
+  RagManager,
+  ragQuery,
+  ragQueryEnhanced,
+  loadControlQuestions,
+  DEFAULT_FILTER_OPTIONS,
+} from '../rag/index.js';
+import type {
+  RagAnswer,
+  RagAnswerEnhanced,
+  RagTestResult,
+  ControlQuestion,
+} from '../rag/index.js';
 import path from 'path';
 
 interface ChatProps {
@@ -225,6 +236,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [interviewAnswers, setInterviewAnswers] = useState<Record<string, any>>({});
   const [ragMode, setRagMode] = useState(false);
   const [ragTestMode, setRagTestMode] = useState(false);
+  const [ragTestIsRerank, setRagTestIsRerank] = useState(false);
   const [ragTestStep, setRagTestStep] = useState(0);
   const [ragTestResults, setRagTestResults] = useState<RagTestResult[]>([]);
   const [ragTestQuestions, setRagTestQuestions] = useState<ControlQuestion[]>([]);
@@ -359,6 +371,43 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       setRagTestMode(false);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const runRagTestStepRerank = async (questions: ControlQuestion[], step: number) => {
+    if (step >= questions.length) {
+      setRagTestMode(false);
+      return;
+    }
+    const q = questions[step];
+    try {
+      const enhancedAnswer = await ragQueryEnhanced(q.question, ragManager, currentModel, {
+        withFilter: true,
+        withRewrite: true,
+        ...DEFAULT_FILTER_OPTIONS,
+      });
+      const rewriteLine = enhancedAnswer.rewrittenQuery
+        ? `✏️ Rewritten: "${enhancedAnswer.rewrittenQuery}"\n`
+        : '';
+      const statsLine = `📊 Чанков: ${enhancedAnswer.chunksBeforeFilter} → ${enhancedAnswer.chunksAfterFilter}\n`;
+      const sourcesBlock =
+        enhancedAnswer.sources.length > 0
+          ? '\n📚 ' +
+            enhancedAnswer.sources
+              .map((s) => `${s.title} / ${s.section} (${s.score.toFixed(3)})`)
+              .join(', ')
+          : '';
+      setNotification(
+        `[${step + 1}/${questions.length}] ${q.question}\n\n` +
+          rewriteLine +
+          statsLine +
+          `\n🤖 ${enhancedAnswer.answer}` +
+          sourcesBlock +
+          `\n\n[Enter — следующий вопрос]`,
+      );
+    } catch (err) {
+      setNotification(`❌ Ошибка на вопросе ${step + 1}: ${String(err)}`);
+      setRagTestMode(false);
     }
   };
 
@@ -1312,6 +1361,35 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     if (trimmed.startsWith('/rag')) {
       const args = trimmed.slice(4).trim();
 
+      if (args === 'test rerank') {
+        if (isLoading) {
+          setNotification('⏳ Дождитесь завершения текущей операции.');
+          return true;
+        }
+        try {
+          const questions = await loadControlQuestions(
+            path.resolve('rag-data', 'control-questions.json')
+          );
+          if (questions.length === 0) {
+            setNotification('❌ Файл control-questions.json пуст.');
+            return true;
+          }
+          setRagTestQuestions(questions);
+          setRagTestResults([]);
+          setRagTestStep(0);
+          setRagTestMode(true);
+          setRagTestIsRerank(true);
+          setNotification(
+            `🔥 RAG Rerank Test: ${questions.length} вопросов с фильтром (threshold=${DEFAULT_FILTER_OPTIONS.threshold})\nНажми Enter для следующего вопроса...`,
+          );
+          runRagTestStepRerank(questions, 0);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          setNotification(`❌ Не удалось загрузить вопросы: ${msg}`);
+        }
+        return true;
+      }
+
       if (args === 'test') {
         if (isLoading) {
           setNotification('⏳ Дождитесь завершения текущей операции.');
@@ -1374,8 +1452,73 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           '  /rag index             — индексировать документы\n' +
           '  /rag <запрос>          — поиск (structural)\n' +
           '  /rag <запрос> --fixed  — поиск (fixed)\n' +
-          '  /rag compare <запрос>  — сравнить стратегии'
+          '  /rag compare <запрос>    — сравнить стратегии\n' +
+          '  /rag enhanced <запрос>  — поиск с фильтром + query rewrite\n' +
+          '  /rag compare2 <запрос>  — сравнение обычного и enhanced режимов\n' +
+          '  /rag test rerank        — контрольные вопросы в enhanced режиме'
         );
+        return true;
+      }
+
+      if (args.startsWith('enhanced ') || args === 'enhanced') {
+        const query = args.slice('enhanced'.length).trim();
+        if (!query) {
+          setNotification('Использование: /rag enhanced <запрос>');
+          return true;
+        }
+        try {
+          const result: RagAnswerEnhanced = await ragQueryEnhanced(query, ragManager, currentModel, {
+            withFilter: true,
+            withRewrite: true,
+            ...DEFAULT_FILTER_OPTIONS,
+          });
+          const rewriteLine = result.rewrittenQuery
+            ? `✏️ Rewritten: "${result.rewrittenQuery}"\n`
+            : '';
+          const statsLine = `📊 Чанков: ${result.chunksBeforeFilter} → ${result.chunksAfterFilter} (threshold: ${DEFAULT_FILTER_OPTIONS.threshold})\n`;
+          const sourcesBlock =
+            result.sources.length > 0
+              ? '\n\n📚 Источники:\n' +
+                result.sources
+                  .map((s) => `  • ${s.title} / ${s.section} (score: ${s.score.toFixed(3)})`)
+                  .join('\n')
+              : '';
+          setNotification(rewriteLine + statsLine + '\n' + result.answer + sourcesBlock);
+        } catch (err) {
+          setNotification(`❌ Ошибка enhanced RAG: ${String(err)}`);
+        }
+        return true;
+      }
+
+      if (args.startsWith('compare2 ') || args === 'compare2') {
+        const query = args.slice('compare2'.length).trim();
+        if (!query) {
+          setNotification('Использование: /rag compare2 <запрос>');
+          return true;
+        }
+        try {
+          const [baseAnswer, enhancedAnswer] = await Promise.all([
+            ragQuery(query, ragManager, currentModel),
+            ragQueryEnhanced(query, ragManager, currentModel, {
+              withFilter: true,
+              withRewrite: true,
+              ...DEFAULT_FILTER_OPTIONS,
+            }),
+          ]);
+          const baseSection =
+            `--- Без фильтра (${baseAnswer.sources.length} чанков) ---\n` +
+            baseAnswer.answer;
+          const rewriteLine = enhancedAnswer.rewrittenQuery
+            ? `Rewritten: "${enhancedAnswer.rewrittenQuery}"\n`
+            : '';
+          const enhancedSection =
+            `--- С фильтром (${enhancedAnswer.chunksBeforeFilter}→${enhancedAnswer.chunksAfterFilter}, threshold=${DEFAULT_FILTER_OPTIONS.threshold}) ---\n` +
+            rewriteLine +
+            enhancedAnswer.answer;
+          setNotification(baseSection + '\n\n' + enhancedSection);
+        } catch (err) {
+          setNotification(`❌ Ошибка compare2: ${String(err)}`);
+        }
         return true;
       }
 
@@ -1500,7 +1643,10 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   /rag index             — индексировать документы
   /rag <запрос>          — поиск по базе знаний
   /rag <запрос> --fixed  — поиск (fixed стратегия)
-  /rag compare <запрос>  — сравнить две стратегии
+  /rag compare <запрос>    — сравнить две стратегии
+  /rag enhanced <запрос>  — поиск с фильтром + query rewrite
+  /rag compare2 <запрос>  — сравнение обычного и enhanced режимов
+  /rag test rerank        — контрольные вопросы в enhanced режиме
 
 📅 Напоминания:
   /remind                        - список всех напоминаний
@@ -1723,7 +1869,10 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           setRagTestStep(nextStep);
           if (nextStep >= ragTestQuestions.length) {
             setRagTestMode(false);
+            setRagTestIsRerank(false);
             setNotification('✅ Тест завершён.');
+          } else if (ragTestIsRerank) {
+            runRagTestStepRerank(ragTestQuestions, nextStep);
           } else {
             runRagTestStep(ragTestQuestions, nextStep);
           }
