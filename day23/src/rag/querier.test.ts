@@ -12,7 +12,7 @@ describe('rewriteQuery', () => {
   it('returns rewritten query from LLM', async () => {
     mockSendMessage.mockResolvedValueOnce({
       content: 'что такое dependency injection',
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, responseTime: 0.1,
     });
 
     const result = await rewriteQuery('что такое DI', 'test-model');
@@ -60,11 +60,11 @@ describe('ragQueryEnhanced', () => {
 
     mockSendMessage.mockResolvedValueOnce({
       content: 'rewritten query',
-      usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+      usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 }, responseTime: 0.1,
     });
     mockSendMessage.mockResolvedValueOnce({
       content: 'final answer',
-      usage: { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 },
+      usage: { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 }, responseTime: 0.2,
     });
 
     const result = await ragQueryEnhanced(
@@ -87,7 +87,7 @@ describe('ragQueryEnhanced', () => {
 
     mockSendMessage.mockResolvedValueOnce({
       content: 'answer',
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, responseTime: 0.1,
     });
 
     const result = await ragQueryEnhanced(
