@@ -37,6 +37,7 @@ import {
   SourceCited,
   RagAnswerCited,
   LOW_CONFIDENCE_THRESHOLD,
+  buildRagSystemPromptWithCitations,
 } from './querier.js';
 
 describe('Citation types and LOW_CONFIDENCE_THRESHOLD', () => {
@@ -72,6 +73,51 @@ function makeSearchResult(score: number): SearchResult {
     },
   };
 }
+
+describe('buildRagSystemPromptWithCitations', () => {
+  it('includes [ID: chunk_id] markers for each chunk', () => {
+    const results: SearchResult[] = [
+      {
+        score: 0.9,
+        chunk: {
+          chunk_id: 'arch_0',
+          source: '/abs/path.md',
+          file: 'arch.md',
+          title: 'Architecture',
+          section: 'Intro',
+          strategy: 'structural',
+          text: 'Clean architecture is about dependencies.',
+          embedding: [],
+        },
+      },
+      {
+        score: 0.8,
+        chunk: {
+          chunk_id: 'arch_1',
+          source: '/abs/path.md',
+          file: 'arch.md',
+          title: 'Architecture',
+          section: 'Layers',
+          strategy: 'structural',
+          text: 'The domain layer has no external deps.',
+          embedding: [],
+        },
+      },
+    ];
+
+    const prompt = buildRagSystemPromptWithCitations(results);
+    expect(prompt).toContain('[ID: arch_0]');
+    expect(prompt).toContain('[ID: arch_1]');
+    expect(prompt).toContain('Clean architecture is about dependencies.');
+    expect(prompt).toContain('The domain layer has no external deps.');
+  });
+
+  it('returns empty context block for empty results', () => {
+    const prompt = buildRagSystemPromptWithCitations([]);
+    expect(prompt).toContain('Контекст:');
+    expect(prompt).not.toContain('[ID:');
+  });
+});
 
 describe('ragQueryEnhanced', () => {
   it('returns RagAnswerEnhanced with filter stats', async () => {

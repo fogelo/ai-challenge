@@ -38,6 +38,20 @@ export function buildRagSystemPrompt(results: SearchResult[]): string {
   );
 }
 
+export function buildRagSystemPromptWithCitations(results: SearchResult[]): string {
+  const contextBlocks = results
+    .map((r) => `[ID: ${r.chunk.chunk_id}]\n${r.chunk.text}`)
+    .join('\n---\n');
+  return (
+    'Ты — ассистент по архитектуре ПО. Отвечай ТОЛЬКО на основе предоставленного контекста.\n' +
+    'Если ответа нет в контексте — честно скажи об этом.\n' +
+    'Не придумывай информацию, которой нет в источниках.\n' +
+    'В ответе ссылайся на конкретные части контекста через их ID ([chunk_id]).\n\n' +
+    'Контекст:\n' +
+    contextBlocks
+  );
+}
+
 export async function ragQuery(
   question: string,
   ragManager: RagManager,
