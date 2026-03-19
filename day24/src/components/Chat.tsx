@@ -1587,16 +1587,19 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         }
         setNotification(
           'RAG команды:\n' +
-          '  /rag mode on           — включить RAG-режим для всего чата\n' +
+          '  /rag mode on           — включить RAG-режим (с цитатами)\n' +
           '  /rag mode off          — выключить RAG-режим\n' +
+          '  /rag cite <запрос>     — поиск с цитатами и источниками\n' +
+          '  /rag cite <запрос> --threshold 0.4  — кастомный порог "не знаю"\n' +
           '  /rag test              — запустить 10 контрольных вопросов\n' +
+          '  /rag test cite         — проверка 10 вопросов (источники + цитаты)\n' +
+          '  /rag test rerank       — контрольные вопросы в enhanced режиме\n' +
           '  /rag index             — индексировать документы\n' +
           '  /rag <запрос>          — поиск (structural)\n' +
           '  /rag <запрос> --fixed  — поиск (fixed)\n' +
-          '  /rag compare <запрос>    — сравнить стратегии\n' +
-          '  /rag enhanced <запрос>  — поиск с фильтром + query rewrite\n' +
-          '  /rag compare2 <запрос>  — сравнение обычного и enhanced режимов\n' +
-          '  /rag test rerank        — контрольные вопросы в enhanced режиме'
+          '  /rag compare <запрос>  — сравнить стратегии\n' +
+          '  /rag enhanced <запрос> — поиск с фильтром + query rewrite\n' +
+          '  /rag compare2 <запрос> — сравнение обычного и enhanced режимов'
         );
         return true;
       }
@@ -1779,15 +1782,17 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   /mcp call <инструмент> <json>  - вызвать инструмент с параметрами
 
 🔍 RAG:
-  /rag mode on/off       — включить/выключить RAG-режим
+  /rag mode on/off       — включить/выключить RAG-режим (с цитатами)
+  /rag cite <запрос>     — поиск с цитатами (--threshold 0.4 для кастомного порога)
   /rag test              — запустить 10 контрольных вопросов
+  /rag test cite         — проверка источников и цитат
   /rag index             — индексировать документы
   /rag <запрос>          — поиск по базе знаний
   /rag <запрос> --fixed  — поиск (fixed стратегия)
-  /rag compare <запрос>    — сравнить две стратегии
-  /rag enhanced <запрос>  — поиск с фильтром + query rewrite
-  /rag compare2 <запрос>  — сравнение обычного и enhanced режимов
-  /rag test rerank        — контрольные вопросы в enhanced режиме
+  /rag compare <запрос>  — сравнить две стратегии
+  /rag enhanced <запрос> — поиск с фильтром + query rewrite
+  /rag compare2 <запрос> — сравнение обычного и enhanced режимов
+  /rag test rerank       — контрольные вопросы в enhanced режиме
 
 📅 Напоминания:
   /remind                        - список всех напоминаний
