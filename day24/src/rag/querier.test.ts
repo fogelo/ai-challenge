@@ -38,6 +38,7 @@ import {
   RagAnswerCited,
   LOW_CONFIDENCE_THRESHOLD,
   buildRagSystemPromptWithCitations,
+  ragQueryCited,
 } from './querier.js';
 
 describe('Citation types and LOW_CONFIDENCE_THRESHOLD', () => {
@@ -116,6 +117,79 @@ describe('buildRagSystemPromptWithCitations', () => {
     const prompt = buildRagSystemPromptWithCitations([]);
     expect(prompt).toContain('Контекст:');
     expect(prompt).not.toContain('[ID:');
+  });
+});
+
+describe('ragQueryCited', () => {
+  beforeEach(() => mockSendMessage.mockClear());
+
+  it('returns isLowConfidence=true when results are empty', async () => {
+    const mockRagManager = {
+      search: vi.fn().mockResolvedValue([]),
+    } as unknown as RagManager;
+
+    const result = await ragQueryCited('question', mockRagManager, 'test-model');
+
+    expect(result.isLowConfidence).toBe(true);
+    expect(result.citations).toHaveLength(0);
+    expect(result.sources).toHaveLength(0);
+    expect(result.answer).toContain('уточните');
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('returns isLowConfidence=true when max score is below LOW_CONFIDENCE_THRESHOLD', async () => {
+    const mockRagManager = {
+      search: vi.fn().mockResolvedValue([
+        makeSearchResult(0.2),
+        makeSearchResult(0.15),
+      ]),
+    } as unknown as RagManager;
+
+    const result = await ragQueryCited('question', mockRagManager, 'test-model');
+
+    expect(result.isLowConfidence).toBe(true);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('returns citations and sources when results are above threshold', async () => {
+    const mockRagManager = {
+      search: vi.fn().mockResolvedValue([
+        makeSearchResult(0.9),
+        makeSearchResult(0.8),
+        makeSearchResult(0.2), // below filter threshold (0.5) — will be removed
+      ]),
+    } as unknown as RagManager;
+
+    mockSendMessage.mockResolvedValueOnce({
+      content: 'The answer is here.',
+      usage: { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 },
+      responseTime: 0.2,
+    });
+
+    const result = await ragQueryCited('test question', mockRagManager, 'test-model');
+
+    expect(result.isLowConfidence).toBe(false);
+    expect(result.answer).toBe('The answer is here.');
+    expect(result.citations).toHaveLength(2);
+    expect(result.sources).toHaveLength(2);
+    expect(result.citations[0].chunk_id).toBe('id_0.9');
+    expect(result.citations[0].file).toBe('path.md');
+    expect(result.citations[0].excerpt).toContain('text 0.9');
+    expect(result.sources[0].file).toBe('path.md');
+    expect(result.sources[0].chunk_id).toBe('id_0.9');
+  });
+
+  it('respects custom lowConfidenceThreshold option', async () => {
+    const mockRagManager = {
+      search: vi.fn().mockResolvedValue([makeSearchResult(0.35)]),
+    } as unknown as RagManager;
+
+    const result = await ragQueryCited('question', mockRagManager, 'test-model', {
+      lowConfidenceThreshold: 0.4,
+    });
+
+    expect(result.isLowConfidence).toBe(true);
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 });
 

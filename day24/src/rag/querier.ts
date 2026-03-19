@@ -173,3 +173,57 @@ export async function ragQueryEnhanced(
     chunksAfterFilter,
   };
 }
+
+export async function ragQueryCited(
+  question: string,
+  ragManager: RagManager,
+  model: string,
+  options?: { threshold?: number; lowConfidenceThreshold?: number },
+): Promise<RagAnswerCited> {
+  const lowConfThreshold = options?.lowConfidenceThreshold ?? LOW_CONFIDENCE_THRESHOLD;
+  const filterThreshold = options?.threshold ?? DEFAULT_FILTER_OPTIONS.threshold;
+
+  const results = await ragManager.search(question, 'structural', 10);
+
+  const maxScore = results.length > 0 ? Math.max(...results.map((r) => r.score)) : 0;
+  if (results.length === 0 || maxScore < lowConfThreshold) {
+    return {
+      answer:
+        'Недостаточно релевантного контекста для ответа на этот вопрос. Пожалуйста, уточните вопрос.',
+      sources: [],
+      citations: [],
+      isLowConfidence: true,
+    };
+  }
+
+  const filtered = filterByThreshold(results, filterThreshold);
+
+  const citations: Citation[] = filtered.map((r) => ({
+    chunk_id: r.chunk.chunk_id,
+    file: r.chunk.file,
+    section: r.chunk.section,
+    excerpt: r.chunk.text.slice(0, 300),
+  }));
+
+  const systemPrompt = buildRagSystemPromptWithCitations(filtered);
+  const apiResponse = await sendMessage(
+    [{ role: 'user' as const, content: question }],
+    model,
+    systemPrompt,
+  );
+
+  const sources: SourceCited[] = filtered.map((r) => ({
+    title: r.chunk.title,
+    section: r.chunk.section,
+    score: r.score,
+    file: r.chunk.file,
+    chunk_id: r.chunk.chunk_id,
+  }));
+
+  return {
+    answer: apiResponse.content,
+    sources,
+    citations,
+    isLowConfidence: false,
+  };
+}
