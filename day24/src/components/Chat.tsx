@@ -21,12 +21,14 @@ import {
   RagManager,
   ragQuery,
   ragQueryEnhanced,
+  ragQueryCited,
   loadControlQuestions,
   DEFAULT_FILTER_OPTIONS,
 } from '../rag/index.js';
 import type {
   RagAnswer,
   RagAnswerEnhanced,
+  RagAnswerCited,
   RagTestResult,
   ControlQuestion,
 } from '../rag/index.js';
@@ -1940,15 +1942,29 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           try {
             await conversation.addUserMessage(userInput);
             setMessages(conversation.getHistory());
-            const ragAnswer = await ragQuery(userInput, ragManager, currentModel);
-            const sourcesBlock =
-              ragAnswer.sources.length > 0
-                ? '\n\n─────────────────\n📚 Источники:\n' +
-                  ragAnswer.sources
-                    .map((s) => `• ${s.title}${s.section ? ` — ${s.section}` : ''} (${s.score.toFixed(2)})`)
-                    .join('\n')
-                : '';
-            const fullAnswer = ragAnswer.answer + sourcesBlock;
+            const ragAnswer: RagAnswerCited = await ragQueryCited(userInput, ragManager, currentModel);
+
+            let fullAnswer: string;
+            if (ragAnswer.isLowConfidence) {
+              fullAnswer = `⚠️ Низкая релевантность контекста.\n\n${ragAnswer.answer}`;
+            } else {
+              const citationsBlock =
+                ragAnswer.citations.length > 0
+                  ? '\n\n─────────────────\n📎 Цитаты:\n' +
+                    ragAnswer.citations
+                      .map((c) => `[${c.chunk_id}] ${c.file}${c.section ? ` / ${c.section}` : ''}\n> ${c.excerpt}`)
+                      .join('\n\n')
+                  : '';
+              const sourcesBlock =
+                ragAnswer.sources.length > 0
+                  ? '\n\n─────────────────\n📚 Источники:\n' +
+                    ragAnswer.sources
+                      .map((s) => `• ${s.title}${s.section ? ` — ${s.section}` : ''} (${s.score.toFixed(2)}) [${s.chunk_id}]`)
+                      .join('\n')
+                  : '';
+              fullAnswer = ragAnswer.answer + citationsBlock + sourcesBlock;
+            }
+
             const metadata: MessageMetadata = {
               model: currentModel,
               timestamp: new Date().toISOString(),
@@ -1959,7 +1975,6 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             const msg = error instanceof Error ? error.message : String(error);
             setError(`RAG error: ${msg}`);
             setNotification(`❌ RAG ошибка: ${msg}`);
-            // Add error as assistant message to keep conversation balanced
             const errorMetadata: MessageMetadata = {
               model: currentModel,
               timestamp: new Date().toISOString(),
