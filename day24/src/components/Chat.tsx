@@ -239,6 +239,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [ragMode, setRagMode] = useState(false);
   const [ragTestMode, setRagTestMode] = useState(false);
   const [ragTestIsRerank, setRagTestIsRerank] = useState(false);
+  const [ragTestIsCite, setRagTestIsCite] = useState(false);
   const [ragTestStep, setRagTestStep] = useState(0);
   const [ragTestResults, setRagTestResults] = useState<RagTestResult[]>([]);
   const [ragTestQuestions, setRagTestQuestions] = useState<ControlQuestion[]>([]);
@@ -410,6 +411,56 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     } catch (err) {
       setNotification(`❌ Ошибка на вопросе ${step + 1}: ${String(err)}`);
       setRagTestMode(false);
+    }
+  };
+
+  const runRagTestStepCite = async (questions: ControlQuestion[], step: number) => {
+    if (step >= questions.length) {
+      setRagTestMode(false);
+      setRagTestIsCite(false);
+      setNotification('✅ Тест cite завершён.');
+      return;
+    }
+    const q = questions[step];
+    setIsLoading(true);
+    try {
+      const result: RagAnswerCited = await ragQueryCited(q.question, ragManager, currentModel);
+
+      const sourcesCheck = result.sources.length > 0
+        ? `✅ Источники: ✓ (${result.sources.length})`
+        : `❌ Источники: ✗`;
+      const citationsCheck = result.citations.length > 0
+        ? `✅ Цитаты: ✓ (${result.citations.length})`
+        : `❌ Цитаты: ✗`;
+
+      const citationsBlock = result.citations.length > 0
+        ? '\n\n📎 Цитаты:\n' +
+          result.citations
+            .map((c) => `[${c.chunk_id}] ${c.file}${c.section ? ` / ${c.section}` : ''}\n> ${c.excerpt}`)
+            .join('\n\n')
+        : '';
+
+      const lowConfLine = result.isLowConfidence ? '\n⚠️ Низкая релевантность' : '';
+
+      const nextHint =
+        step < questions.length - 1
+          ? `\n\n─────────────────\nНажмите Enter для вопроса ${step + 2}/${questions.length}`
+          : '\n\n─────────────────\nНажмите Enter для завершения теста';
+
+      setNotification(
+        `📋 Вопрос ${step + 1}/${questions.length}: ${q.question}\n\n` +
+        `🤖 Ответ:\n${result.answer}\n\n` +
+        `${sourcesCheck}\n${citationsCheck}${lowConfLine}` +
+        citationsBlock +
+        nextHint,
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setNotification(`❌ Ошибка на вопросе ${step + 1}: ${msg}`);
+      setRagTestMode(false);
+      setRagTestIsCite(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1363,6 +1414,37 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     if (trimmed.startsWith('/rag')) {
       const args = trimmed.slice(4).trim();
 
+      if (args === 'test cite') {
+        if (isLoading) {
+          setNotification('⏳ Дождитесь завершения текущей операции.');
+          return true;
+        }
+        try {
+          const questions = await loadControlQuestions(
+            path.resolve('rag-data', 'control-questions.json')
+          );
+          if (questions.length === 0) {
+            setNotification('❌ Файл control-questions.json пуст.');
+            return true;
+          }
+          setRagTestQuestions(questions);
+          setRagTestResults([]);
+          setRagTestStep(0);
+          setRagTestMode(true);
+          setRagTestIsCite(true);
+          setNotification(
+            `📋 Тест cite: ${questions.length} вопросов с цитатами.\n` +
+            `Нажмите Enter для следующего вопроса...\n\n` +
+            `Загружаю первый вопрос...`,
+          );
+          runRagTestStepCite(questions, 0);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          setNotification(`❌ Не удалось загрузить вопросы: ${msg}`);
+        }
+        return true;
+      }
+
       if (args === 'test rerank') {
         if (isLoading) {
           setNotification('⏳ Дождитесь завершения текущей операции.');
@@ -1388,6 +1470,63 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           setNotification(`❌ Не удалось загрузить вопросы: ${msg}`);
+        }
+        return true;
+      }
+
+      if (args.startsWith('cite ') || args === 'cite') {
+        const rest = args.slice('cite'.length).trim();
+        if (!rest) {
+          setNotification('Использование: /rag cite <запрос> [--threshold 0.4]');
+          return true;
+        }
+
+        // Parse optional --threshold flag (controls lowConfidenceThreshold, default 0.3)
+        let query = rest;
+        let lowConfThreshold: number | undefined;
+        const thresholdMatch = rest.match(/--threshold\s+([\d.]+)/);
+        if (thresholdMatch) {
+          lowConfThreshold = parseFloat(thresholdMatch[1]);
+          query = rest.replace(/--threshold\s+[\d.]+/, '').trim();
+        }
+
+        if (!query) {
+          setNotification('Использование: /rag cite <запрос> [--threshold 0.4]');
+          return true;
+        }
+
+        setNotification('⏳ Ищу с цитатами...');
+        try {
+          const result: RagAnswerCited = await ragQueryCited(
+            query,
+            ragManager,
+            currentModel,
+            lowConfThreshold !== undefined ? { lowConfidenceThreshold: lowConfThreshold } : undefined,
+          );
+
+          if (result.isLowConfidence) {
+            setNotification(`⚠️ Низкая релевантность (порог: ${lowConfThreshold ?? 0.3})\n\n${result.answer}`);
+            return true;
+          }
+
+          const citationsBlock =
+            result.citations.length > 0
+              ? '\n\n─────────────────\n📎 Цитаты:\n' +
+                result.citations
+                  .map((c) => `[${c.chunk_id}] ${c.file}${c.section ? ` / ${c.section}` : ''}\n> ${c.excerpt}`)
+                  .join('\n\n')
+              : '';
+          const sourcesBlock =
+            result.sources.length > 0
+              ? '\n\n─────────────────\n📚 Источники:\n' +
+                result.sources
+                  .map((s) => `• ${s.title}${s.section ? ` — ${s.section}` : ''} (${s.score.toFixed(2)}) [${s.chunk_id}]`)
+                  .join('\n')
+              : '';
+
+          setNotification(`🔍 "${query}"\n\n${result.answer}${citationsBlock}${sourcesBlock}`);
+        } catch (err) {
+          setNotification(`❌ Ошибка /rag cite: ${String(err)}`);
         }
         return true;
       }
@@ -1872,7 +2011,10 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           if (nextStep >= ragTestQuestions.length) {
             setRagTestMode(false);
             setRagTestIsRerank(false);
+            setRagTestIsCite(false);
             setNotification('✅ Тест завершён.');
+          } else if (ragTestIsCite) {
+            runRagTestStepCite(ragTestQuestions, nextStep);
           } else if (ragTestIsRerank) {
             runRagTestStepRerank(ragTestQuestions, nextStep);
           } else {
