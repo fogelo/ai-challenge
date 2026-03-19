@@ -32,6 +32,31 @@ import { DEFAULT_FILTER_OPTIONS } from './reranker.js';
 import type { RagManager } from './RagManager.js';
 import type { SearchResult } from './types.js';
 
+import {
+  Citation,
+  SourceCited,
+  RagAnswerCited,
+  LOW_CONFIDENCE_THRESHOLD,
+} from './querier.js';
+
+describe('Citation types and LOW_CONFIDENCE_THRESHOLD', () => {
+  it('LOW_CONFIDENCE_THRESHOLD is 0.3', () => {
+    expect(LOW_CONFIDENCE_THRESHOLD).toBe(0.3);
+  });
+
+  it('Citation shape is correct', () => {
+    const c: Citation = {
+      chunk_id: 'doc_0',
+      file: 'arch.md',
+      section: 'Intro',
+      excerpt: 'Some text...',
+    };
+    expect(c.chunk_id).toBe('doc_0');
+    expect(c.file).toBe('arch.md');
+    expect(c.excerpt).toBe('Some text...');
+  });
+});
+
 function makeSearchResult(score: number): SearchResult {
   return {
     score,

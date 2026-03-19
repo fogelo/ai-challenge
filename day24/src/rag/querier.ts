@@ -86,6 +86,29 @@ export interface RagAnswerEnhanced extends RagAnswer {
   chunksAfterFilter: number;
 }
 
+export const LOW_CONFIDENCE_THRESHOLD = 0.3;
+
+export interface Citation {
+  chunk_id: string;
+  file: string;     // Chunk.file (filename only — NOT Chunk.source which is an absolute path)
+  section: string;
+  excerpt: string;  // first ~300 chars of chunk text
+}
+
+// Extends Source with file/chunk_id — only used in ragQueryCited.
+// Existing Source interface is NOT modified.
+export interface SourceCited extends Source {
+  file: string;
+  chunk_id: string;
+}
+
+export interface RagAnswerCited {
+  answer: string;
+  sources: SourceCited[];
+  citations: Citation[];
+  isLowConfidence: boolean;
+}
+
 export async function ragQueryEnhanced(
   question: string,
   ragManager: RagManager,
