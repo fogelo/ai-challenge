@@ -11,18 +11,28 @@
 ```typescript
 export interface Citation {
   chunk_id: string;
-  source: string;   // имя файла
+  file: string;     // имя файла (maps to Chunk.file, NOT Chunk.source which is an absolute path)
   section: string;  // ближайший заголовок
   excerpt: string;  // первые ~300 символов текста чанка
 }
 
-export interface RagAnswerCited extends RagAnswer {
+// Расширяет существующий Source — только для ragQueryCited.
+// Существующий Source интерфейс ({ title, section, score }) НЕ МЕНЯЕТСЯ.
+// ragQuery и ragQueryEnhanced продолжают возвращать Source как прежде.
+export interface SourceCited extends Source {
+  file: string;
+  chunk_id: string;
+}
+
+export interface RagAnswerCited {
+  answer: string;
+  sources: SourceCited[];
   citations: Citation[];
   isLowConfidence: boolean;
 }
 ```
 
-`RagAnswer` уже содержит `answer: string` и `sources: Source[]` — `RagAnswerCited` расширяет его.
+`RagAnswerCited` НЕ расширяет `RagAnswer` (чтобы не форсировать изменение `Source` интерфейса). Это изолирует изменения от существующих функций.
 
 ---
 
@@ -56,10 +66,12 @@ export async function ragQueryCited(
 2. Если `results` пустой или `max(scores) < lowConfidenceThreshold` (default: 0.3):
    - Вернуть `{ isLowConfidence: true, answer: "Недостаточно релевантного контекста для ответа. Пожалуйста, уточните вопрос.", citations: [], sources: [] }`
 3. `filterByThreshold(results, threshold)` (default: 0.5) → `filtered`
-4. `citations = filtered.map(r => ({ chunk_id: r.chunk.chunk_id, source: r.chunk.file, section: r.chunk.section, excerpt: r.chunk.text.slice(0, 300) }))`
+   - Примечание: `filterByThreshold` имеет fallback — если ни один чанк не проходит 0.5, возвращает один лучший результат. Это приемлемо: такой чанк прошёл проверку low-confidence (score >= 0.3), поэтому ответ даётся, пусть и с одним слабым источником. Цитата и источник будут присутствовать.
+4. `citations = filtered.map(r => ({ chunk_id: r.chunk.chunk_id, file: r.chunk.file, section: r.chunk.section, excerpt: r.chunk.text.slice(0, 300) }))`
 5. `buildRagSystemPromptWithCitations(filtered)` → `systemPrompt`
 6. `sendMessage([{ role: 'user', content: question }], model, systemPrompt)` → `apiResponse`
-7. `sources = filtered.map(r => ({ title: r.chunk.title, section: r.chunk.section, score: r.score }))`
+7. `sources: SourceCited[] = filtered.map(r => ({ title: r.chunk.title, section: r.chunk.section, score: r.score, file: r.chunk.file, chunk_id: r.chunk.chunk_id }))`
+   - Использует `SourceCited`, а не `Source`, чтобы не трогать существующий интерфейс.
 8. Вернуть `{ answer: apiResponse.content, sources, citations, isLowConfidence: false }`
 
 ---
@@ -67,6 +79,11 @@ export async function ragQueryCited(
 ## Новый системный промпт `buildRagSystemPromptWithCitations`
 
 **Файл:** `src/rag/querier.ts`
+
+**Сигнатура:**
+```typescript
+export function buildRagSystemPromptWithCitations(results: SearchResult[]): string
+```
 
 Промпт нумерует чанки по ID, чтобы модель могла на них ссылаться:
 
@@ -107,7 +124,8 @@ export async function ragQueryCited(
 ### Новая команда `/rag cite <запрос> [--threshold N]`
 
 - Разовый запрос через `ragQueryCited`
-- `--threshold` переопределяет `lowConfidenceThreshold`
+- `--threshold` переопределяет `lowConfidenceThreshold` (порог "не знаю", default: 0.3)
+- Примечание: `--threshold` здесь управляет `lowConfidenceThreshold`, а не filter threshold (0.5). Чтобы избежать путаницы с `ragQueryEnhanced` где `--threshold` означает filter threshold, это поведение явно задокументировано в help-тексте.
 - Рендеринг: то же что и в ragMode
 
 ### Новая команда `/rag test cite`
@@ -119,6 +137,9 @@ export async function ragQueryCited(
   - Ответ
   - `Источники: ✓ (N)` или `✗`
   - `Цитаты: ✓ (N)` или `✗`
+  - Сами цитаты (excerpts) — для визуальной проверки что смысл ответа совпадает с источниками
+  - `isLowConfidence` если применимо
+- Проверка "смысл совпадает с цитатами" — **ручная/визуальная**: пользователь видит ответ и цитаты рядом и оценивает сам
 - Переход по Enter, как в `/rag test`
 
 ### Обновление `/rag help`
@@ -137,6 +158,7 @@ export async function ragQueryCited(
 Добавить экспорт:
 - `ragQueryCited`
 - `RagAnswerCited`
+- `SourceCited`
 - `Citation`
 - `LOW_CONFIDENCE_THRESHOLD`
 - `buildRagSystemPromptWithCitations`
