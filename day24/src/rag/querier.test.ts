@@ -42,8 +42,8 @@ import {
 } from './querier.js';
 
 describe('Citation types and LOW_CONFIDENCE_THRESHOLD', () => {
-  it('LOW_CONFIDENCE_THRESHOLD is 0.3', () => {
-    expect(LOW_CONFIDENCE_THRESHOLD).toBe(0.3);
+  it('LOW_CONFIDENCE_THRESHOLD is 0.65', () => {
+    expect(LOW_CONFIDENCE_THRESHOLD).toBe(0.65);
   });
 
   it('Citation shape is correct', () => {

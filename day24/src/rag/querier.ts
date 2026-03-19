@@ -100,7 +100,7 @@ export interface RagAnswerEnhanced extends RagAnswer {
   chunksAfterFilter: number;
 }
 
-export const LOW_CONFIDENCE_THRESHOLD = 0.3;
+export const LOW_CONFIDENCE_THRESHOLD = 0.65;
 
 export interface Citation {
   chunk_id: string;
