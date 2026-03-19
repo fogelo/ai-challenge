@@ -6,3 +6,9 @@ export { filterByThreshold, DEFAULT_FILTER_OPTIONS } from './reranker.js';
 export type { FilterOptions } from './reranker.js';
 export { rewriteQuery, ragQueryEnhanced } from './querier.js';
 export type { RagAnswerEnhanced } from './querier.js';
+export {
+  ragQueryCited,
+  buildRagSystemPromptWithCitations,
+  LOW_CONFIDENCE_THRESHOLD,
+} from './querier.js';
+export type { Citation, SourceCited, RagAnswerCited } from './querier.js';
