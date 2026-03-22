@@ -36,7 +36,7 @@
 
 Добавить новую функцию `ragQueryWithHistory` в `querier.ts`, которая принимает полную историю диалога и системный промпт с task state. Изменить ragMode handler в `Chat.tsx` для её использования.
 
-Существующий код (`ragQueryCited`, `/rag cite`, тесты) — не трогаем.
+Существующий код не трогаем: функция `ragQueryCited`, handler `/rag cite` в Chat.tsx, файл `reranker.test.ts`, существующие тесты в `querier.test.ts`. Меняется только ragMode handler в Chat.tsx, добавляются новые тесты в `querier.test.ts`.
 
 ---
 
@@ -65,6 +65,13 @@ Chat.tsx — изменение ragMode handler
 
 ### 1. `querier.ts` — новая функция
 
+**Дополнительный импорт** (добавить в начало файла):
+```typescript
+import type { Message } from '../types/index.js';
+```
+
+**Примечание:** функция использует `ragManager.search(question)` без `rewriteQuery` — это намеренно, для соответствия поведению `ragQueryCited`. Логика с rewrite есть только в `ragQueryEnhanced`.
+
 ```typescript
 export async function ragQueryWithHistory(
   question: string,
@@ -82,7 +89,7 @@ export async function ragQueryWithHistory(
   const maxScore = results.length > 0 ? Math.max(...results.map(r => r.score)) : 0;
   if (results.length === 0 || maxScore < lowConfThreshold) {
     return {
-      answer: 'Недостаточно релевантного контекста для ответа. Пожалуйста, уточните вопрос.',
+      answer: 'Недостаточно релевантного контекста для ответа на этот вопрос. Пожалуйста, уточните вопрос.',
       sources: [],
       citations: [],
       isLowConfidence: true,
@@ -117,7 +124,15 @@ export async function ragQueryWithHistory(
 
 ### 2. `rag/index.ts` — экспорт новой функции
 
-Добавить `ragQueryWithHistory` в список экспортов.
+Добавить в существующий блок экспортов cited-функций (строки 9–14):
+```typescript
+export {
+  ragQueryCited,
+  ragQueryWithHistory,      // ← добавить сюда
+  buildRagSystemPromptWithCitations,
+  LOW_CONFIDENCE_THRESHOLD,
+} from './querier.js';
+```
 
 ### 3. `Chat.tsx` — изменение ragMode handler
 
@@ -128,6 +143,8 @@ const ragAnswer: RagAnswerCited = await ragQueryCited(userInput, ragManager, cur
 
 На:
 ```typescript
+// ВАЖНО: getMessagesForAPI() вызывается ПОСЛЕ addUserMessage(),
+// чтобы текущее сообщение пользователя было включено в историю.
 const systemPrefix = conversation.buildSystemPromptWithMemory();
 const history = await conversation.getMessagesForAPI();
 const ragAnswer: RagAnswerCited = await ragQueryWithHistory(
@@ -204,10 +221,34 @@ const ragAnswer: RagAnswerCited = await ragQueryWithHistory(
 
 ---
 
+### Unit тест в `querier.test.ts`
+
+Добавить минимальный тест, мокируя `ragManager.search` и `sendMessage`:
+
+```typescript
+describe('ragQueryWithHistory', () => {
+  it('passes full message history to sendMessage', async () => {
+    // mock ragManager.search → возвращает 1 chunk с score > 0.65
+    // mock sendMessage → возвращает { content: 'answer', toolCalls: [] }
+    // передаём history из 3 сообщений
+    // проверяем: sendMessage вызван с messages.length === 3
+    // проверяем: isLowConfidence === false, sources.length === 1
+  });
+
+  it('returns isLowConfidence when max score below threshold', async () => {
+    // mock ragManager.search → возвращает chunks с score < 0.65
+    // проверяем: isLowConfidence === true, answer содержит 'уточните вопрос'
+  });
+});
+```
+
+---
+
 ## Файлы для изменения
 
 | Файл | Тип изменения |
 |---|---|
-| `src/rag/querier.ts` | Добавить функцию `ragQueryWithHistory` |
-| `src/rag/index.ts` | Экспортировать новую функцию |
+| `src/rag/querier.ts` | Добавить импорт `Message`, добавить функцию `ragQueryWithHistory` |
+| `src/rag/index.ts` | Добавить `ragQueryWithHistory` в существующий блок cited-экспортов |
 | `src/components/Chat.tsx` | Заменить вызов в ragMode handler (~5 строк) |
+| `src/rag/querier.test.ts` | Добавить 2 unit теста для `ragQueryWithHistory` |
