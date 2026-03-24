@@ -30,6 +30,9 @@ const DEFAULT_CONFIG: ModelConfig = {
       maxCheckpoints: 20,
     },
   },
+  provider: 'openrouter',
+  ollamaBaseUrl: 'http://localhost:11434',
+  ollamaModel: 'llama3.2',
 };
 
 export class ConfigManager {
@@ -71,6 +74,17 @@ export class ConfigManager {
         parsed.strategy = DEFAULT_CONFIG.strategy;
       }
 
+      // Add provider defaults if missing
+      if (!parsed.provider) {
+        parsed.provider = DEFAULT_CONFIG.provider;
+      }
+      if (!parsed.ollamaBaseUrl) {
+        parsed.ollamaBaseUrl = DEFAULT_CONFIG.ollamaBaseUrl;
+      }
+      if (!parsed.ollamaModel) {
+        parsed.ollamaModel = DEFAULT_CONFIG.ollamaModel;
+      }
+
       return parsed;
     } catch (error) {
       console.error('Failed to load config, using default:', error);
@@ -110,6 +124,22 @@ export class ConfigManager {
       throw new Error(`Invalid keepRecentMessages: ${config.keepRecentMessages}. Must be a positive integer`);
     }
     return config;
+  }
+
+  getProviderConfig(): { provider: 'openrouter' | 'ollama'; ollamaBaseUrl: string; ollamaModel: string } {
+    return {
+      provider: this.config.provider ?? 'openrouter',
+      ollamaBaseUrl: this.config.ollamaBaseUrl ?? 'http://localhost:11434',
+      ollamaModel: this.config.ollamaModel ?? 'llama3.2',
+    };
+  }
+
+  setProvider(provider: 'openrouter' | 'ollama', ollamaModel?: string): void {
+    this.config.provider = provider;
+    if (ollamaModel) {
+      this.config.ollamaModel = ollamaModel;
+    }
+    this.save(this.config);
   }
 
   getStrategyConfig(): StrategyConfig {
