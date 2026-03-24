@@ -172,6 +172,9 @@ export interface ModelConfig {
   favoriteModels: string[];
   summarization: SummarizationConfig;
   strategy: StrategyConfig;
+  provider: 'openrouter' | 'ollama';
+  ollamaBaseUrl: string;
+  ollamaModel: string;
 }
 
 /**
