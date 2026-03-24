@@ -1,16 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { rewriteQuery } from './querier.js';
 
-vi.mock('../api/openrouter.js', () => ({
-  sendMessage: vi.fn(),
+const { mockSendMessageFn } = vi.hoisted(() => ({
+  mockSendMessageFn: vi.fn(),
 }));
 
-import { sendMessage } from '../api/openrouter.js';
-const mockSendMessage = vi.mocked(sendMessage);
+vi.mock('../api/index.js', () => ({
+  getSendMessage: vi.fn(() => mockSendMessageFn),
+}));
+
+import { getSendMessage } from '../api/index.js';
+import { initQuerier, rewriteQuery } from './querier.js';
+import type { ConfigManager } from '../models/config.js';
+
+const mockGetSendMessage = vi.mocked(getSendMessage);
+
+beforeEach(() => {
+  mockSendMessageFn.mockReset();
+  mockGetSendMessage.mockReturnValue(mockSendMessageFn);
+  initQuerier({} as ConfigManager);
+});
 
 describe('rewriteQuery', () => {
   it('returns rewritten query from LLM', async () => {
-    mockSendMessage.mockResolvedValueOnce({
+    mockSendMessageFn.mockResolvedValueOnce({
       content: 'что такое dependency injection',
       usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, responseTime: 0.1,
     });
@@ -20,7 +32,7 @@ describe('rewriteQuery', () => {
   });
 
   it('returns original question on LLM error', async () => {
-    mockSendMessage.mockRejectedValueOnce(new Error('API error'));
+    mockSendMessageFn.mockRejectedValueOnce(new Error('API error'));
 
     const result = await rewriteQuery('original question', 'test-model');
     expect(result).toBe('original question');
@@ -121,7 +133,7 @@ describe('buildRagSystemPromptWithCitations', () => {
 });
 
 describe('ragQueryCited', () => {
-  beforeEach(() => mockSendMessage.mockClear());
+  beforeEach(() => mockSendMessageFn.mockClear());
 
   it('returns isLowConfidence=true when results are empty', async () => {
     const mockRagManager = {
@@ -134,7 +146,7 @@ describe('ragQueryCited', () => {
     expect(result.citations).toHaveLength(0);
     expect(result.sources).toHaveLength(0);
     expect(result.answer).toContain('уточните');
-    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockSendMessageFn).not.toHaveBeenCalled();
   });
 
   it('returns isLowConfidence=true when max score is below LOW_CONFIDENCE_THRESHOLD', async () => {
@@ -148,7 +160,7 @@ describe('ragQueryCited', () => {
     const result = await ragQueryCited('question', mockRagManager, 'test-model');
 
     expect(result.isLowConfidence).toBe(true);
-    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockSendMessageFn).not.toHaveBeenCalled();
   });
 
   it('returns citations and sources when results are above threshold', async () => {
@@ -160,7 +172,7 @@ describe('ragQueryCited', () => {
       ]),
     } as unknown as RagManager;
 
-    mockSendMessage.mockResolvedValueOnce({
+    mockSendMessageFn.mockResolvedValueOnce({
       content: 'The answer is here.',
       usage: { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 },
       responseTime: 0.2,
@@ -189,7 +201,7 @@ describe('ragQueryCited', () => {
     });
 
     expect(result.isLowConfidence).toBe(true);
-    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockSendMessageFn).not.toHaveBeenCalled();
   });
 });
 
@@ -203,11 +215,11 @@ describe('ragQueryEnhanced', () => {
       ]),
     } as unknown as RagManager;
 
-    mockSendMessage.mockResolvedValueOnce({
+    mockSendMessageFn.mockResolvedValueOnce({
       content: 'rewritten query',
       usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 }, responseTime: 0.1,
     });
-    mockSendMessage.mockResolvedValueOnce({
+    mockSendMessageFn.mockResolvedValueOnce({
       content: 'final answer',
       usage: { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 }, responseTime: 0.2,
     });
@@ -230,7 +242,7 @@ describe('ragQueryEnhanced', () => {
       search: vi.fn().mockResolvedValue([makeSearchResult(0.8)]),
     } as unknown as RagManager;
 
-    mockSendMessage.mockResolvedValueOnce({
+    mockSendMessageFn.mockResolvedValueOnce({
       content: 'answer',
       usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, responseTime: 0.1,
     });
@@ -252,14 +264,14 @@ import { ragQueryWithHistory } from './querier.js';
 import type { Message } from '../types/index.js';
 
 describe('ragQueryWithHistory', () => {
-  beforeEach(() => mockSendMessage.mockClear());
+  beforeEach(() => mockSendMessageFn.mockClear());
 
   it('passes full message history to sendMessage', async () => {
     const mockRagManager = {
       search: vi.fn().mockResolvedValue([makeSearchResult(0.9)]),
     } as unknown as RagManager;
 
-    mockSendMessage.mockResolvedValueOnce({
+    mockSendMessageFn.mockResolvedValueOnce({
       content: 'answer with history',
       usage: { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 },
       responseTime: 0.2,
@@ -285,7 +297,7 @@ describe('ragQueryWithHistory', () => {
     expect(result.citations).toHaveLength(1);
 
     // sendMessage must receive the full history (3 messages), not just the current question
-    const callArgs = mockSendMessage.mock.calls[0];
+    const callArgs = mockSendMessageFn.mock.calls[0];
     expect(callArgs[0]).toHaveLength(3);
     expect(callArgs[0][0].content).toBe('first question');
   });
@@ -307,6 +319,6 @@ describe('ragQueryWithHistory', () => {
 
     expect(result.isLowConfidence).toBe(true);
     expect(result.answer).toContain('уточните вопрос');
-    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockSendMessageFn).not.toHaveBeenCalled();
   });
 });

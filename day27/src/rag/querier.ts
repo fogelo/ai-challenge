@@ -1,6 +1,14 @@
 import fs from 'fs/promises';
 import type { SearchResult } from './types.js';
-import { sendMessage } from '../api/openrouter.js';
+import { getSendMessage } from '../api/index.js';
+import type { ConfigManager } from '../models/config.js';
+
+type SendMessageFn = ReturnType<typeof getSendMessage>;
+let _sendMessage: SendMessageFn;
+
+export function initQuerier(configManager: ConfigManager): void {
+  _sendMessage = getSendMessage(configManager);
+}
 import type { RagManager } from './RagManager.js';
 import type { Message } from '../types/index.js';
 
@@ -61,7 +69,7 @@ export async function ragQuery(
   const results = await ragManager.search(question, 'structural', 5);
   const systemPrompt = buildRagSystemPrompt(results);
   const messages = [{ role: 'user' as const, content: question }];
-  const apiResponse = await sendMessage(messages, model, systemPrompt);
+  const apiResponse = await _sendMessage(messages, model, systemPrompt);
   const sources: Source[] = results.map((r) => ({
     title: r.chunk.title,
     section: r.chunk.section,
@@ -80,7 +88,7 @@ export async function rewriteQuery(question: string, model: string): Promise<str
     'Перефразируй запрос для семантического поиска по технической документации.\n' +
     'Верни только переформулированный запрос, без пояснений.';
   try {
-    const response = await sendMessage(
+    const response = await _sendMessage(
       [{ role: 'user', content: question }],
       model,
       systemPrompt,
@@ -158,7 +166,7 @@ export async function ragQueryEnhanced(
 
   const systemPrompt = buildRagSystemPrompt(filtered);
   const messages = [{ role: 'user' as const, content: question }];
-  const apiResponse = await sendMessage(messages, model, systemPrompt);
+  const apiResponse = await _sendMessage(messages, model, systemPrompt);
 
   const sources: Source[] = filtered.map((r) => ({
     title: r.chunk.title,
@@ -207,7 +215,7 @@ export async function ragQueryCited(
   }));
 
   const systemPrompt = buildRagSystemPromptWithCitations(filtered);
-  const apiResponse = await sendMessage(
+  const apiResponse = await _sendMessage(
     [{ role: 'user' as const, content: question }],
     model,
     systemPrompt,
@@ -272,7 +280,7 @@ export async function ragQueryWithHistory(
   // Send FULL conversation history so LLM has multi-turn context.
   // IMPORTANT: caller must call getMessagesForAPI() *after* addUserMessage()
   // so the current user message is the last entry in messages[].
-  const apiResponse = await sendMessage(messages, model, finalSystemPrompt);
+  const apiResponse = await _sendMessage(messages, model, finalSystemPrompt);
 
   const sources: SourceCited[] = filtered.map((r) => ({
     title: r.chunk.title,
