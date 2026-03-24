@@ -1773,6 +1773,12 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       const helpText = `
 📚 Доступные команды:
 
+🌐 Провайдер:
+  /provider                 - текущий провайдер и модель
+  /provider openrouter      - переключить на OpenRouter
+  /provider ollama          - переключить на Ollama
+  /provider ollama <model>  - переключить и задать модель
+
 🤖 Модели:
   /model                    - список моделей
   /model <номер>            - переключиться на модель
