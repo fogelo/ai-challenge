@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput, Key } from 'ink';
 import { Conversation } from '../chat/conversation.js';
 import { SessionManager } from '../chat/session.js';
-import { sendMessage } from '../api/openrouter.js';
+import { getSendMessage } from '../api/index.js';
 import { Message, UsageInfo, SessionStats, MessageMetadata, Reminder } from '../types/index.js';
 import { SKILLS, SkillName } from '../skills/index.js';
 import { ModelRegistry } from '../models/registry.js';
@@ -256,6 +256,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     chunkSize: 500,
     chunkOverlap: 100,
   }));
+  // Provider-aware sendMessage — reads configManager.getProviderConfig() on each call (lazy)
+  const sendMessage = getSendMessage(configManager);
+
   const [activeMcpTool, setActiveMcpTool] = useState<string | null>(null);
   interface ToolCallLog {
     serverName: string;
@@ -728,6 +731,44 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       }
 
       setNotification(`Модель ${modelName} удалена из списка`);
+      return true;
+    }
+
+    // Provider commands
+    if (trimmed === '/provider') {
+      const { provider, ollamaModel } = configManager.getProviderConfig();
+      const activeModel = provider === 'ollama' ? ollamaModel : configManager.getConfig().currentModel;
+      setNotification(`Текущий провайдер: ${provider}\nМодель: ${activeModel}`);
+      return true;
+    }
+
+    if (trimmed.startsWith('/provider ')) {
+      const arg = trimmed.slice('/provider '.length).trim();
+
+      if (arg === 'openrouter') {
+        configManager.setProvider('openrouter');
+        const model = configManager.getConfig().currentModel;
+        setCurrentModel(model);
+        setNotification(`✅ Провайдер: openrouter\nМодель: ${model}`);
+        return true;
+      }
+
+      if (arg === 'ollama' || arg.startsWith('ollama ')) {
+        const parts = arg.split(' ');
+        const ollamaModel = parts[1] ?? configManager.getProviderConfig().ollamaModel;
+        configManager.setProvider('ollama', ollamaModel);
+        setCurrentModel(ollamaModel);
+        setNotification(`✅ Провайдер: ollama\nМодель: ${ollamaModel}`);
+        return true;
+      }
+
+      setNotification(
+        'Использование:\n' +
+        '/provider — текущий провайдер\n' +
+        '/provider openrouter — переключить на OpenRouter\n' +
+        '/provider ollama — переключить на Ollama\n' +
+        '/provider ollama <model> — переключить и задать модель'
+      );
       return true;
     }
 
@@ -2185,7 +2226,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             currentModel,
             finalSystemPrompt,
             temperature,
-            mcpTools.length > 0 ? mcpTools : undefined
+            configManager.getProviderConfig().provider === 'openrouter' && mcpTools.length > 0 ? mcpTools : undefined
           );
 
           const MAX_TOOL_ITERATIONS = 10;
@@ -2246,7 +2287,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
                 currentModel,
                 finalSystemPrompt,
                 temperature,
-                mcpTools.length > 0 ? mcpTools : undefined
+                configManager.getProviderConfig().provider === 'openrouter' && mcpTools.length > 0 ? mcpTools : undefined
               );
             }
           } finally {
@@ -2464,6 +2505,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         </Text>
         <Text dimColor>
           <Text color="yellow">/model</Text> - управление моделями | <Text color="yellow">/model add/remove</Text>
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/provider</Text> - текущий провайдер | <Text color="yellow">/provider openrouter|ollama [model]</Text>
         </Text>
         <Text dimColor>
           <Text color="yellow">/clear</Text> - очистить контекст и статистику
