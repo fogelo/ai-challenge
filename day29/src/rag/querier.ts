@@ -1,0 +1,299 @@
+import fs from 'fs/promises';
+import type { SearchResult } from './types.js';
+import { getSendMessage } from '../api/index.js';
+import type { ConfigManager } from '../models/config.js';
+
+type SendMessageFn = ReturnType<typeof getSendMessage>;
+let _sendMessage: SendMessageFn;
+
+export function initQuerier(configManager: ConfigManager): void {
+  _sendMessage = getSendMessage(configManager);
+}
+import type { RagManager } from './RagManager.js';
+import type { Message } from '../types/index.js';
+
+export interface Source {
+  title: string;
+  section: string;
+  score: number;
+}
+
+export interface RagAnswer {
+  answer: string;
+  sources: Source[];
+}
+
+export interface ControlQuestion {
+  question: string;
+  expectedAnswer: string;
+  expectedSources: string[];
+}
+
+export interface RagTestResult {
+  controlQuestion: ControlQuestion;
+  answerWithoutRag: string;
+  answerWithRag: string;
+  sources: Source[];
+}
+
+export function buildRagSystemPrompt(results: SearchResult[]): string {
+  const contextBlocks = results.map((r) => r.chunk.text).join('\n---\n');
+  return (
+    'Ты — ассистент по архитектуре ПО. Отвечай ТОЛЬКО на основе предоставленного контекста.\n' +
+    'Если ответа нет в контексте — честно скажи об этом.\n' +
+    'Не придумывай информацию, которой нет в источниках.\n\n' +
+    'Контекст:\n' +
+    contextBlocks
+  );
+}
+
+export function buildRagSystemPromptWithCitations(results: SearchResult[]): string {
+  const contextBlocks = results
+    .map((r) => `[ID: ${r.chunk.chunk_id}]\n${r.chunk.text}`)
+    .join('\n---\n');
+  return (
+    'Ты — ассистент по архитектуре ПО. Отвечай ТОЛЬКО на основе предоставленного контекста.\n' +
+    'Если ответа нет в контексте — честно скажи об этом.\n' +
+    'Не придумывай информацию, которой нет в источниках.\n' +
+    'В ответе ссылайся на конкретные части контекста через их ID ([chunk_id]).\n\n' +
+    'Контекст:\n' +
+    contextBlocks
+  );
+}
+
+export async function ragQuery(
+  question: string,
+  ragManager: RagManager,
+  model: string,
+): Promise<RagAnswer> {
+  const results = await ragManager.search(question, 'structural', 5);
+  const systemPrompt = buildRagSystemPrompt(results);
+  const messages = [{ role: 'user' as const, content: question }];
+  const apiResponse = await _sendMessage(messages, model, systemPrompt);
+  const sources: Source[] = results.map((r) => ({
+    title: r.chunk.title,
+    section: r.chunk.section,
+    score: r.score,
+  }));
+  return { answer: apiResponse.content, sources };
+}
+
+export async function loadControlQuestions(resolvedPath: string): Promise<ControlQuestion[]> {
+  const raw = await fs.readFile(resolvedPath, 'utf-8');
+  return JSON.parse(raw) as ControlQuestion[];
+}
+
+export async function rewriteQuery(question: string, model: string): Promise<string> {
+  const systemPrompt =
+    'Перефразируй запрос для семантического поиска по технической документации.\n' +
+    'Верни только переформулированный запрос, без пояснений.';
+  try {
+    const response = await _sendMessage(
+      [{ role: 'user', content: question }],
+      model,
+      systemPrompt,
+    );
+    return response.content.trim();
+  } catch (err) {
+    console.error('[rewriteQuery] LLM error, using original query:', err);
+    return question;
+  }
+}
+
+import { filterByThreshold, DEFAULT_FILTER_OPTIONS } from './reranker.js';
+import type { FilterOptions } from './reranker.js';
+
+export interface RagAnswerEnhanced extends RagAnswer {
+  rewrittenQuery?: string;
+  chunksBeforeFilter: number;
+  chunksAfterFilter: number;
+}
+
+export const LOW_CONFIDENCE_THRESHOLD = 0.65;
+
+export interface Citation {
+  chunk_id: string;
+  file: string;     // Chunk.file (filename only — NOT Chunk.source which is an absolute path)
+  section: string;
+  excerpt: string;  // first ~300 chars of chunk text
+}
+
+// Extends Source with file/chunk_id — only used in ragQueryCited.
+// Existing Source interface is NOT modified.
+export interface SourceCited extends Source {
+  file: string;
+  chunk_id: string;
+}
+
+export interface RagAnswerCited {
+  answer: string;
+  sources: SourceCited[];
+  citations: Citation[];
+  isLowConfidence: boolean;
+}
+
+export async function ragQueryEnhanced(
+  question: string,
+  ragManager: RagManager,
+  model: string,
+  options: { withFilter: boolean; withRewrite: boolean } & Partial<FilterOptions>,
+): Promise<RagAnswerEnhanced> {
+  const resolved = {
+    ...DEFAULT_FILTER_OPTIONS,
+    withFilter: options.withFilter,
+    withRewrite: options.withRewrite,
+    ...(options.threshold !== undefined && { threshold: options.threshold }),
+    ...(options.topKInitial !== undefined && { topKInitial: options.topKInitial }),
+    ...(options.topKFinal !== undefined && { topKFinal: options.topKFinal }),
+  };
+
+  let searchQuery = question;
+  let rewrittenQuery: string | undefined;
+
+  if (resolved.withRewrite) {
+    rewrittenQuery = await rewriteQuery(question, model);
+    searchQuery = rewrittenQuery;
+  }
+
+  const results = await ragManager.search(searchQuery, 'structural', resolved.topKInitial);
+  const chunksBeforeFilter = results.length;
+
+  let filtered = resolved.withFilter
+    ? filterByThreshold(results, resolved.threshold)
+    : results;
+  filtered = filtered.slice(0, resolved.topKFinal);
+  const chunksAfterFilter = filtered.length;
+
+  const systemPrompt = buildRagSystemPrompt(filtered);
+  const messages = [{ role: 'user' as const, content: question }];
+  const apiResponse = await _sendMessage(messages, model, systemPrompt);
+
+  const sources: Source[] = filtered.map((r) => ({
+    title: r.chunk.title,
+    section: r.chunk.section,
+    score: r.score,
+  }));
+
+  return {
+    answer: apiResponse.content,
+    sources,
+    rewrittenQuery,
+    chunksBeforeFilter,
+    chunksAfterFilter,
+  };
+}
+
+export async function ragQueryCited(
+  question: string,
+  ragManager: RagManager,
+  model: string,
+  options?: { threshold?: number; lowConfidenceThreshold?: number },
+): Promise<RagAnswerCited> {
+  const lowConfThreshold = options?.lowConfidenceThreshold ?? LOW_CONFIDENCE_THRESHOLD;
+  const filterThreshold = options?.threshold ?? DEFAULT_FILTER_OPTIONS.threshold;
+
+  const results = await ragManager.search(question, 'structural', 10);
+
+  const maxScore = results.length > 0 ? Math.max(...results.map((r) => r.score)) : 0;
+  if (results.length === 0 || maxScore < lowConfThreshold) {
+    return {
+      answer:
+        'Недостаточно релевантного контекста для ответа на этот вопрос. Пожалуйста, уточните вопрос.',
+      sources: [],
+      citations: [],
+      isLowConfidence: true,
+    };
+  }
+
+  const filtered = filterByThreshold(results, filterThreshold);
+
+  const citations: Citation[] = filtered.map((r) => ({
+    chunk_id: r.chunk.chunk_id,
+    file: r.chunk.file,
+    section: r.chunk.section,
+    excerpt: r.chunk.text.slice(0, 300),
+  }));
+
+  const systemPrompt = buildRagSystemPromptWithCitations(filtered);
+  const apiResponse = await _sendMessage(
+    [{ role: 'user' as const, content: question }],
+    model,
+    systemPrompt,
+  );
+
+  const sources: SourceCited[] = filtered.map((r) => ({
+    title: r.chunk.title,
+    section: r.chunk.section,
+    score: r.score,
+    file: r.chunk.file,
+    chunk_id: r.chunk.chunk_id,
+  }));
+
+  return {
+    answer: apiResponse.content,
+    sources,
+    citations,
+    isLowConfidence: false,
+  };
+}
+
+export async function ragQueryWithHistory(
+  question: string,
+  messages: Message[],
+  systemPromptPrefix: string,
+  ragManager: RagManager,
+  model: string,
+  options?: { threshold?: number; lowConfidenceThreshold?: number },
+): Promise<RagAnswerCited> {
+  const lowConfThreshold = options?.lowConfidenceThreshold ?? LOW_CONFIDENCE_THRESHOLD;
+  const filterThreshold = options?.threshold ?? DEFAULT_FILTER_OPTIONS.threshold;
+
+  const results = await ragManager.search(question, 'structural', 10);
+
+  const maxScore = results.length > 0 ? Math.max(...results.map((r) => r.score)) : 0;
+  if (results.length === 0 || maxScore < lowConfThreshold) {
+    return {
+      answer:
+        'Недостаточно релевантного контекста для ответа на этот вопрос. Пожалуйста, уточните вопрос.',
+      sources: [],
+      citations: [],
+      isLowConfidence: true,
+    };
+  }
+
+  const filtered = filterByThreshold(results, filterThreshold);
+
+  const citations: Citation[] = filtered.map((r) => ({
+    chunk_id: r.chunk.chunk_id,
+    file: r.chunk.file,
+    section: r.chunk.section,
+    excerpt: r.chunk.text.slice(0, 300),
+  }));
+
+  // Merge task state / memory prefix with RAG context.
+  // rewriteQuery is intentionally omitted — matches ragQueryCited behaviour.
+  const ragPrompt = buildRagSystemPromptWithCitations(filtered);
+  const finalSystemPrompt = systemPromptPrefix
+    ? systemPromptPrefix + '\n\n' + ragPrompt
+    : ragPrompt;
+
+  // Send FULL conversation history so LLM has multi-turn context.
+  // IMPORTANT: caller must call getMessagesForAPI() *after* addUserMessage()
+  // so the current user message is the last entry in messages[].
+  const apiResponse = await _sendMessage(messages, model, finalSystemPrompt);
+
+  const sources: SourceCited[] = filtered.map((r) => ({
+    title: r.chunk.title,
+    section: r.chunk.section,
+    score: r.score,
+    file: r.chunk.file,
+    chunk_id: r.chunk.chunk_id,
+  }));
+
+  return {
+    answer: apiResponse.content,
+    sources,
+    citations,
+    isLowConfidence: false,
+  };
+}
