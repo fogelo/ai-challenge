@@ -1,4 +1,4 @@
-import { ModelConfig, SummarizationConfig, StrategyConfig } from '../types/index.js';
+import { ModelConfig, SummarizationConfig, StrategyConfig, OllamaParams } from '../types/index.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -33,6 +33,10 @@ const DEFAULT_CONFIG: ModelConfig = {
   provider: 'openrouter',
   ollamaBaseUrl: 'http://localhost:11434',
   ollamaModel: 'llama3.2',
+  ollamaParams: {
+    maxTokens: 2048,
+    numCtx: 4096,
+  },
 };
 
 export class ConfigManager {
@@ -84,6 +88,9 @@ export class ConfigManager {
       if (!parsed.ollamaModel) {
         parsed.ollamaModel = DEFAULT_CONFIG.ollamaModel;
       }
+      if (!parsed.ollamaParams) {
+        parsed.ollamaParams = DEFAULT_CONFIG.ollamaParams;
+      }
 
       return parsed;
     } catch (error) {
@@ -132,6 +139,18 @@ export class ConfigManager {
       ollamaBaseUrl: this.config.ollamaBaseUrl ?? 'http://localhost:11434',
       ollamaModel: this.config.ollamaModel ?? 'llama3.2',
     };
+  }
+
+  getOllamaParams(): OllamaParams {
+    return this.config.ollamaParams ?? DEFAULT_CONFIG.ollamaParams!;
+  }
+
+  setOllamaParams(params: Partial<OllamaParams>): void {
+    this.config.ollamaParams = {
+      ...this.getOllamaParams(),
+      ...params,
+    };
+    this.save(this.config);
   }
 
   setProvider(provider: 'openrouter' | 'ollama', ollamaModel?: string): void {
