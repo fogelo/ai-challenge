@@ -40,6 +40,7 @@ describe('getSendMessage', () => {
         ollamaBaseUrl: 'http://localhost:11434',
         ollamaModel: 'gemma3',
       }),
+      getOllamaParams: () => ({ maxTokens: undefined, numCtx: undefined }),
     };
     const send = getSendMessage(fakeConfig as any);
     const result = await send(fakeMessages, 'anthropic/claude-3.5-sonnet');
@@ -55,6 +56,7 @@ describe('getSendMessage', () => {
         ollamaBaseUrl: 'http://localhost:11434',
         ollamaModel: 'llama3.2',
       }),
+      getOllamaParams: () => ({ maxTokens: undefined, numCtx: undefined }),
     };
     const send = getSendMessage(fakeConfig as any);
     await send(fakeMessages, 'any-model', 'system prompt');
@@ -64,7 +66,32 @@ describe('getSendMessage', () => {
       'http://localhost:11434',
       'system prompt',
       undefined,
+      undefined,
+      undefined,
       undefined
+    );
+  });
+
+  it('passes maxTokens and numCtx from config to Ollama client', async () => {
+    const fakeConfig = {
+      getProviderConfig: () => ({
+        provider: 'ollama' as const,
+        ollamaBaseUrl: 'http://localhost:11434',
+        ollamaModel: 'mistral',
+      }),
+      getOllamaParams: () => ({ maxTokens: 1024, numCtx: 8192 }),
+    };
+    const send = getSendMessage(fakeConfig as any);
+    await send(fakeMessages, 'any-model');
+    expect(mockOllamaSend).toHaveBeenCalledWith(
+      fakeMessages,
+      'mistral',
+      'http://localhost:11434',
+      undefined,
+      undefined,
+      undefined,
+      1024,
+      8192
     );
   });
 });
