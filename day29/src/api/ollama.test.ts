@@ -64,4 +64,53 @@ describe('ollama sendMessage', () => {
       sendMessage([{ role: 'user', content: 'hi' }], 'bad-model', 'http://localhost:11434')
     ).rejects.toThrow('404');
   });
+
+  it('includes max_tokens in request when maxTokens provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      }),
+    });
+
+    const { sendMessage } = await import('./ollama.js');
+    await sendMessage(
+      [{ role: 'user', content: 'hello' }],
+      'mistral',
+      'http://localhost:11434',
+      undefined,
+      undefined,
+      undefined,
+      512   // maxTokens
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.max_tokens).toBe(512);
+  });
+
+  it('includes options.num_ctx in request when numCtx provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      }),
+    });
+
+    const { sendMessage } = await import('./ollama.js');
+    await sendMessage(
+      [{ role: 'user', content: 'hello' }],
+      'mistral',
+      'http://localhost:11434',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      8192  // numCtx
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.options?.num_ctx).toBe(8192);
+  });
 });

@@ -5,6 +5,8 @@ interface OllamaRequest {
   model: string;
   messages: unknown[];
   temperature?: number;
+  max_tokens?: number;
+  options?: { num_ctx?: number };
   tools?: unknown[];
   tool_choice?: 'auto';
 }
@@ -31,7 +33,9 @@ export async function sendMessage(
   baseUrl: string,
   systemPrompt?: string,
   temperature?: number,
-  tools?: MCPTool[]
+  tools?: MCPTool[],
+  maxTokens?: number,
+  numCtx?: number
 ): Promise<ApiResponse> {
   const allMessages = (systemPrompt
     ? [{ role: 'system' as const, content: systemPrompt }, ...messages]
@@ -60,6 +64,8 @@ export async function sendMessage(
     model: modelId,
     messages: allMessages,
     ...(temperature !== undefined && { temperature }),
+    ...(maxTokens !== undefined && { max_tokens: maxTokens }),
+    ...(numCtx !== undefined && { options: { num_ctx: numCtx } }),
     ...(ollamaTools && { tools: ollamaTools, tool_choice: 'auto' }),
   };
 
