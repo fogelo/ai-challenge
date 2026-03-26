@@ -167,6 +167,13 @@ export interface StrategyConfig {
 /**
  * User's model configuration stored in config.json
  */
+export interface OllamaParams {
+  /** max_tokens in Ollama /v1/chat/completions (OpenAI-compatible field) */
+  maxTokens?: number;
+  /** options.num_ctx — context window size for the model */
+  numCtx?: number;
+}
+
 export interface ModelConfig {
   currentModel: string;
   favoriteModels: string[];
@@ -175,6 +182,7 @@ export interface ModelConfig {
   provider: 'openrouter' | 'ollama';
   ollamaBaseUrl: string;
   ollamaModel: string;
+  ollamaParams?: OllamaParams;
 }
 
 /**
