@@ -590,6 +590,47 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    if (trimmed.startsWith('/ollama:maxTokens ')) {
+      const value = trimmed.slice('/ollama:maxTokens '.length).trim();
+      const num = parseInt(value, 10);
+      if (isNaN(num) || num < 64 || num > 32768) {
+        setNotification('maxTokens должен быть целым числом от 64 до 32768');
+        return true;
+      }
+      configManager.setOllamaParams({ maxTokens: num });
+      setNotification(`✅ Ollama maxTokens установлен на ${num}`);
+      return true;
+    }
+
+    if (trimmed === '/ollama:maxTokens') {
+      const { maxTokens } = configManager.getOllamaParams();
+      setNotification(`Текущий Ollama maxTokens: ${maxTokens ?? 'не задан'}`);
+      return true;
+    }
+
+    if (trimmed.startsWith('/ollama:numCtx ')) {
+      const value = trimmed.slice('/ollama:numCtx '.length).trim();
+      const num = parseInt(value, 10);
+      if (isNaN(num) || num < 512 || num > 131072) {
+        setNotification('numCtx должен быть целым числом от 512 до 131072');
+        return true;
+      }
+      if (num > 32768) {
+        setNotification(`⚠️ numCtx ${num} может не поддерживаться моделью. Сохраняю...`);
+      }
+      configManager.setOllamaParams({ numCtx: num });
+      if (num <= 32768) {
+        setNotification(`✅ Ollama numCtx установлен на ${num}`);
+      }
+      return true;
+    }
+
+    if (trimmed === '/ollama:numCtx') {
+      const { numCtx } = configManager.getOllamaParams();
+      setNotification(`Текущий Ollama numCtx: ${numCtx ?? 'не задан'}`);
+      return true;
+    }
+
     // Skills commands
     if (trimmed === '/skills') {
       if (activeSkills.length === 0) {
@@ -1778,6 +1819,8 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   /provider openrouter      - переключить на OpenRouter
   /provider ollama          - переключить на Ollama
   /provider ollama <model>  - переключить и задать модель
+  /ollama:maxTokens [N]     - установить/показать max tokens (64–32768)
+  /ollama:numCtx [N]        - установить/показать context window (512–131072)
 
 🤖 Модели:
   /model                    - список моделей
@@ -2500,7 +2543,12 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
           CLI Агент (Ctrl+C для выхода)
         </Text>
         <Text dimColor>
-          Модель: {currentModel} | Temperature: {temperature}
+          {configManager.getProviderConfig().provider === 'ollama'
+            ? (() => {
+                const { maxTokens, numCtx } = configManager.getOllamaParams();
+                return `Модель: ${currentModel} | Temperature: ${temperature} | MaxTok: ${maxTokens ?? '-'} | Ctx: ${numCtx ?? '-'}`;
+              })()
+            : `Модель: ${currentModel} | Temperature: ${temperature}`}
         </Text>
         <Text dimColor>
           Skills: {activeSkills.length > 0 ? activeSkills.join(', ') : 'нет'}{' '}
@@ -2508,6 +2556,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         </Text>
         <Text dimColor>
           <Text color="yellow">/temperature [0-2]</Text> - установить temperature
+        </Text>
+        <Text dimColor>
+          <Text color="yellow">/ollama:maxTokens [N]</Text> - max tokens | <Text color="yellow">/ollama:numCtx [N]</Text> - context window (только Ollama)
         </Text>
         <Text dimColor>
           <Text color="yellow">/model</Text> - управление моделями | <Text color="yellow">/model add/remove</Text>
