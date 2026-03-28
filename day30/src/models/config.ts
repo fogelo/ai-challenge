@@ -1,4 +1,4 @@
-import { ModelConfig, SummarizationConfig, StrategyConfig, OllamaParams } from '../types/index.js';
+import { ModelConfig, SummarizationConfig, StrategyConfig, OllamaParams, RateLimitConfig } from '../types/index.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -36,6 +36,9 @@ const DEFAULT_CONFIG: ModelConfig = {
   ollamaParams: {
     maxTokens: 2048,
     numCtx: 4096,
+  },
+  rateLimit: {
+    maxRequestsPerMinute: 10,
   },
 };
 
@@ -91,6 +94,9 @@ export class ConfigManager {
       if (!parsed.ollamaParams) {
         parsed.ollamaParams = DEFAULT_CONFIG.ollamaParams;
       }
+      if (!parsed.rateLimit) {
+        parsed.rateLimit = DEFAULT_CONFIG.rateLimit;
+      }
 
       return parsed;
     } catch (error) {
@@ -143,6 +149,10 @@ export class ConfigManager {
 
   getOllamaParams(): OllamaParams {
     return this.config.ollamaParams ?? DEFAULT_CONFIG.ollamaParams!;
+  }
+
+  getRateLimitConfig(): RateLimitConfig {
+    return this.config.rateLimit ?? DEFAULT_CONFIG.rateLimit!;
   }
 
   setOllamaParams(params: Partial<OllamaParams>): void {
