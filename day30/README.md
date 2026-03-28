@@ -1,4 +1,4 @@
-# CLI Агент - День 29
+# CLI Агент - День 30
 
 Интерактивный CLI агент с персонализацией через профили пользователей для взаимодействия с LLM через OpenRouter API.
 
@@ -362,3 +362,91 @@ src/
 - Ink (React для CLI)
 - OpenRouter API
 - dotenv
+
+## Развёртывание локальной LLM на VPS (День 30)
+
+### Требования к серверу
+
+- OS: Ubuntu 22.04
+- RAM: 8 GB (для `llama3.1:8b`)
+- Диск: 20+ GB свободно
+
+### Шаг 1: Установка Ollama на VPS
+
+```bash
+# Подключиться к серверу
+ssh root@<VPS_IP>
+
+# Установить Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Скачать модель (~4.7 GB, нужно 8 GB RAM)
+ollama pull llama3.1:8b
+
+# Или маленькую модель (~1.3 GB, достаточно 2 GB RAM)
+ollama pull llama3.2:1b
+```
+
+### Шаг 2: Запуск с публичным биндингом
+
+```bash
+# Открыть порт в firewall
+ufw allow 11434
+ufw enable
+
+# Запустить Ollama на всех интерфейсах
+OLLAMA_HOST=0.0.0.0 ollama serve
+```
+
+### Шаг 3: Проверить доступность с локальной машины
+
+```bash
+curl http://<VPS_IP>:11434/api/tags
+```
+
+Ожидаемый ответ: JSON со списком установленных моделей.
+
+### Шаг 4: Настроить агент
+
+В `config.json` обновить `ollamaBaseUrl`:
+
+```json
+{
+  "provider": "ollama",
+  "ollamaBaseUrl": "http://<VPS_IP>:11434",
+  "ollamaModel": "llama3.1:8b",
+  "ollamaParams": {
+    "maxTokens": 1024,
+    "numCtx": 8192
+  },
+  "rateLimit": {
+    "maxRequestsPerMinute": 10
+  }
+}
+```
+
+### Шаг 5: Проверить в агенте
+
+```bash
+npm start
+/ollama:status
+```
+
+Ожидаемый вывод:
+
+```
+🖥  Ollama URL: http://<VPS_IP>:11434
+🤖 Модель: llama3.1:8b
+⏱  Rate limit: 0/10 req/min
+✅ Соединение: OK
+```
+
+### Остановка сервиса после демо
+
+```bash
+# На сервере
+pkill ollama
+
+# Закрыть порт
+ufw delete allow 11434
+```
