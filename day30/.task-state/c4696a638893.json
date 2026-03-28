@@ -1,0 +1,14 @@
+{
+  "taskId": "c4696a638893",
+  "description": "compare models",
+  "currentState": "planning",
+  "startedAt": "2026-03-25T14:40:36.806Z",
+  "updatedAt": "2026-03-25T14:40:36.806Z",
+  "stateHistory": [
+    {
+      "from": "START",
+      "to": "planning",
+      "timestamp": "2026-03-25T14:40:36.806Z"
+    }
+  ]
+}
