@@ -174,6 +174,11 @@ export interface OllamaParams {
   numCtx?: number;
 }
 
+export interface RateLimitConfig {
+  /** Max requests per 60-second window */
+  maxRequestsPerMinute: number;
+}
+
 export interface ModelConfig {
   currentModel: string;
   favoriteModels: string[];
@@ -183,6 +188,7 @@ export interface ModelConfig {
   ollamaBaseUrl: string;
   ollamaModel: string;
   ollamaParams?: OllamaParams;
+  rateLimit?: RateLimitConfig;
 }
 
 /**
