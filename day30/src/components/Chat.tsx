@@ -644,6 +644,33 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    if (trimmed === '/ollama:status') {
+      const { provider, ollamaBaseUrl, ollamaModel } = configManager.getProviderConfig();
+      if (provider !== 'ollama') {
+        setNotification('ℹ️ Провайдер сейчас: openrouter (не Ollama)');
+        return true;
+      }
+      const stats = rateLimiter.getStats();
+      const statusLines = [
+        `🖥  Ollama URL: ${ollamaBaseUrl}`,
+        `🤖 Модель: ${ollamaModel}`,
+        `⏱  Rate limit: ${stats.used}/${stats.limit} req/min${stats.resetsIn > 0 ? ` (сброс через ${stats.resetsIn}с)` : ''}`,
+      ];
+
+      fetch(`${ollamaBaseUrl}/api/tags`)
+        .then((r) => {
+          const icon = r.ok ? '✅' : '❌';
+          setNotification(statusLines.join('\n') + `\n${icon} Соединение: ${r.ok ? 'OK' : `HTTP ${r.status}`}`);
+        })
+        .catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          setNotification(statusLines.join('\n') + `\n❌ Соединение: ${msg}`);
+        });
+
+      setNotification(statusLines.join('\n') + '\n🔄 Проверяю соединение...');
+      return true;
+    }
+
     // Skills commands
     if (trimmed === '/skills') {
       if (activeSkills.length === 0) {
@@ -1834,6 +1861,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   /provider ollama <model>  - переключить и задать модель
   /ollama:maxTokens [N]     - установить/показать max tokens (64–32768)
   /ollama:numCtx [N]        - установить/показать context window (512–131072)
+  /ollama:status            - статус Ollama (URL, модель, rate limit, соединение)
 
 🤖 Модели:
   /model                    - список моделей
