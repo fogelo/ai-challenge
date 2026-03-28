@@ -8,6 +8,7 @@ import { SKILLS, SkillName } from '../skills/index.js';
 import { ModelRegistry } from '../models/registry.js';
 import { ConfigManager } from '../models/config.js';
 import { calculateApproximateTokens } from '../utils/tokens.js';
+import { RateLimiter } from '../utils/rateLimiter.js';
 import {
   SlidingWindowStrategy,
   StickyFactsStrategy,
@@ -268,6 +269,18 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [toolCallLogs, setToolCallLogs] = useState<ToolCallLog[]>([]);
   const isPollingRef = useRef(false);
   const [isMcpConnected, setIsMcpConnected] = useState(false);
+
+  const rateLimiter = useRef<RateLimiter>(
+    new RateLimiter(configManager.getRateLimitConfig().maxRequestsPerMinute)
+  ).current;
+
+  function checkOllamaContext(messages: Message[]): boolean {
+    const { provider } = configManager.getProviderConfig();
+    if (provider !== 'ollama') return false;
+    const { numCtx } = configManager.getOllamaParams();
+    if (!numCtx) return false;
+    return calculateApproximateTokens(messages) > numCtx * 0.9;
+  }
 
   async function performSummarization(forced: boolean = false): Promise<void> {
     const config = configManager.getSummarizationConfig();
@@ -2244,6 +2257,28 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         setIsLoading(true);
 
         try {
+          // Rate limit check (Ollama only)
+          if (configManager.getProviderConfig().provider === 'ollama') {
+            const rl = rateLimiter.check();
+            if (!rl.allowed) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: 'assistant' as const,
+                  content: `⏱ Rate limit: подождите ${rl.waitSeconds} сек. (лимит: ${configManager.getRateLimitConfig().maxRequestsPerMinute} req/min)`,
+                },
+              ]);
+              setIsLoading(false);
+              return;
+            }
+            rateLimiter.record();
+          }
+
+          // Context size check (Ollama only)
+          if (checkOllamaContext(conversation.getHistory())) {
+            await performSummarization(false);
+          }
+
           // Check if summarization is needed before processing
           if (conversation.needsSummarization()) {
             await performSummarization(false);
