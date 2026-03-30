@@ -1424,7 +1424,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
         // 1. RAG: search project docs
         let ragContext = '';
         try {
-          const ragResults = await ragManager.search(question, 'structural', 3);
+          const ragResults = await ragManager.search(question, 'structural', 6);
           if (ragResults.length > 0) {
             ragContext = ragResults.map((r) => r.chunk.text).join('\n---\n');
           }
