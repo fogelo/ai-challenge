@@ -248,7 +248,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   const [invariantsLoaded, setInvariantsLoaded] = useState(false);
   const [mcpManager] = useState(() => new MCPClientManager());
   const [ragManager] = useState(() => new RagManager({
-    sourcePath: path.resolve('for_rag/Архитектура'),
+    sourcePath: path.resolve('for_rag/project-docs'),
     outputPath: path.resolve('rag-data'),
     embeddingModel: 'nomic-embed-text',
     ollamaUrl: 'http://localhost:11434',
