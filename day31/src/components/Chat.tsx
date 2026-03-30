@@ -1837,6 +1837,9 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
   /mcp call <инструмент>         - вызвать инструмент вручную
   /mcp call <инструмент> <json>  - вызвать инструмент с параметрами
 
+🤖 Developer Assistant:
+  /ask <вопрос>          — спросить о проекте (RAG + git контекст)
+
 🔍 RAG:
   /rag mode on/off       — включить/выключить RAG-режим (с цитатами)
   /rag cite <запрос>     — поиск с цитатами (--threshold 0.4 для кастомного порога)
