@@ -1411,6 +1411,61 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // Ask command — developer assistant (RAG + MCP git)
+    if (trimmed.startsWith('/ask ') || trimmed === '/ask') {
+      const question = trimmed.slice(5).trim();
+      if (!question) {
+        setNotification('Использование: /ask <вопрос о проекте>\nПример: /ask какие команды есть?');
+        return true;
+      }
+
+      setIsLoading(true);
+      try {
+        // 1. RAG: search project docs
+        let ragContext = '';
+        try {
+          const ragResults = await ragManager.search(question, 'structural', 3);
+          if (ragResults.length > 0) {
+            ragContext = ragResults.map((r) => r.chunk.text).join('\n---\n');
+          }
+        } catch {
+          ragContext = '(документация не проиндексирована — запустите /rag index)';
+        }
+
+        // 2. MCP: git context
+        let gitBranch = '';
+        let gitFiles = '';
+        try {
+          if (!mcpManager.isConnected()) await mcpManager.connect();
+          gitBranch = await mcpManager.callTool('get_branch', {});
+          gitFiles = await mcpManager.callTool('list_files', {});
+        } catch {
+          gitBranch = '(MCP недоступен)';
+        }
+
+        // 3. LLM with combined context
+        const askSystemPrompt =
+          'Ты ассистент разработчика. Отвечай на вопросы о проекте на основе документации и контекста ниже.\n' +
+          'Если информации нет — честно скажи об этом.\n\n' +
+          'Документация проекта:\n' + ragContext +
+          '\n\nТекущая git-ветка: ' + gitBranch +
+          '\n\nСтруктура src/:\n' + gitFiles;
+
+        const askResponse = await sendMessage(
+          [{ role: 'user', content: question }],
+          currentModel,
+          askSystemPrompt,
+        );
+
+        setNotification(`🤖 Developer Assistant:\n\n${askResponse.content}`);
+      } catch (err) {
+        setNotification(`❌ Ошибка /ask: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setIsLoading(false);
+      }
+      return true;
+    }
+
     // RAG commands
     if (trimmed.startsWith('/rag')) {
       const args = trimmed.slice(4).trim();
