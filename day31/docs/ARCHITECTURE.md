@@ -1,309 +1,149 @@
-# Архитектура AI Агента
+# Архитектура AI Агента — День 31
 
 ## Обзор
 
-Агент построен по модульной архитектуре с четким разделением ответственности. Это **НЕ** просто функция для вызова API, а полноценная система с инкапсулированной логикой.
+Модульный CLI-агент на TypeScript + Ink (React для терминала). Взаимодействует с LLM через OpenRouter API.
 
 ---
 
-## Структура компонентов
+## Структура модулей
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   USER INTERFACE                     │
-│              (src/components/Chat.tsx)               │
-│   • CLI интерфейс (Ink/React)                       │
-│   • Обработка команд (/model, /clear, /skills)      │
-│   • Отображение метрик и статистики                 │
-└──────────────────┬──────────────────────────────────┘
-                   │
-        ┌──────────┴──────────┐
-        │                     │
-        ▼                     ▼
-┌───────────────┐    ┌──────────────────┐
-│  CONVERSATION │    │  MODEL REGISTRY  │
-│    MANAGER    │    │    & CONFIG      │
-└───────┬───────┘    └────────┬─────────┘
-        │                     │
-        │ • Управление        │ • Загрузка моделей
-        │   историей          │ • Расчет стоимости
-        │ • Контекст          │ • Конфигурация
-        │   диалога           │
-        │                     │
-        └──────────┬──────────┘
-                   │
-                   ▼
-        ┌─────────────────────┐
-        │    API CLIENT       │
-        │ (sendMessage)       │
-        │                     │
-        │ • HTTP запросы      │
-        │ • Обработка ошибок  │
-        │ • Метрики           │
-        └──────────┬──────────┘
-                   │
-                   ▼
-        ┌─────────────────────┐
-        │   OpenRouter API    │
-        │    (External LLM)   │
-        └─────────────────────┘
-```
-
----
-
-## Ключевые компоненты
-
-### 1. Conversation Manager (Агент)
-
-**Файл:** `src/chat/conversation.ts`
-
-**Ответственность:** Управление состоянием диалога
-
-```typescript
-class Conversation {
-  private messages: Message[] = []
-
-  // Инкапсулированные методы
-  addUserMessage(content: string): void
-  addAssistantMessage(content: string): void
-  getHistory(): Message[]
-  clear(): void
-}
-```
-
-**Инкапсулирует:**
-- ✅ Состояние диалога (приватное поле `messages`)
-- ✅ Логику добавления сообщений
-- ✅ Управление контекстом
-
-**Это отдельная сущность:** Класс с собственным состоянием и поведением.
-
----
-
-### 2. API Client
-
-**Файл:** `src/api/openrouter.ts`
-
-**Ответственность:** Взаимодействие с LLM
-
-```typescript
-async function sendMessage(
-  messages: Message[],
-  modelId: string,
-  systemPrompt?: string,
-  temperature?: number
-): Promise<ApiResponse>
-```
-
-**Инкапсулирует:**
-- ✅ HTTP запросы к OpenRouter
-- ✅ Аутентификацию (API ключ)
-- ✅ Формирование запроса
-- ✅ Парсинг ответа
-- ✅ Обработку ошибок
-- ✅ Сбор метрик (время ответа)
-
-**Абстракция:** Скрывает детали работы с API от остальной системы.
-
----
-
-### 3. Model Registry
-
-**Файл:** `src/models/registry.ts`
-
-**Ответственность:** Управление моделями
-
-```typescript
-class ModelRegistry {
-  private models: Map<string, ModelInfo>
-
-  async initialize(): Promise<void>
-  getModel(id: string): ModelInfo | undefined
-  calculateCost(modelId: string, usage: UsageInfo): number
-}
-```
-
-**Инкапсулирует:**
-- ✅ Информацию о доступных моделях
-- ✅ Цены моделей (загружаются из API)
-- ✅ Бизнес-логику расчета стоимости
-
----
-
-### 4. Config Manager
-
-**Файл:** `src/models/config.ts`
-
-**Ответственность:** Управление конфигурацией
-
-```typescript
-class ConfigManager {
-  private config: ModelConfig
-
-  load(): ModelConfig
-  save(config: ModelConfig): void
-  setCurrentModel(modelId: string): void
-  addFavoriteModel(modelId: string): boolean
-  removeFavoriteModel(index: number): boolean
-}
-```
-
-**Инкапсулирует:**
-- ✅ Чтение/запись конфигурации
-- ✅ Валидацию настроек
-- ✅ Управление избранными моделями
-
----
-
-## Почему это НЕ "просто один вызов API"?
-
-### ❌ Плохая архитектура (один вызов API):
-```typescript
-// Все в одном месте, без инкапсуляции
-const userInput = "Привет";
-const response = await fetch('https://api.com', {
-  method: 'POST',
-  body: JSON.stringify({ message: userInput })
-});
-const data = await response.json();
-console.log(data.response);
-```
-
-### ✅ Хорошая архитектура (наш агент):
-```typescript
-// 1. Отдельная сущность для управления диалогом
-const conversation = new Conversation();
-conversation.addUserMessage(userInput);
-
-// 2. Инкапсулированный API клиент
-const response = await sendMessage(
-  conversation.getHistory(),
-  modelId,
-  systemPrompt,
-  temperature
-);
-
-// 3. Сохранение состояния
-conversation.addAssistantMessage(response.content);
-
-// 4. Управление моделями
-const cost = modelRegistry.calculateCost(modelId, response.usage);
+src/
+├── index.tsx                    # Точка входа
+├── components/
+│   └── Chat.tsx                 # Основной UI (Ink), обработка всех команд
+├── api/
+│   └── openrouter.ts            # HTTP клиент OpenRouter API
+├── chat/
+│   ├── conversation.ts          # История диалога, суммаризация
+│   └── session.ts               # Сохранение/загрузка сессий (.chat-history/)
+├── models/
+│   ├── registry.ts              # Список моделей, цены, расчёт стоимости
+│   └── config.ts                # ConfigManager: config.json
+├── memory/
+│   └── MemoryManager.ts         # Три слоя памяти: short/working/long-term
+├── profile/
+│   └── ProfileManager.ts        # Профили пользователей, интервью
+├── skills/
+│   └── index.ts                 # Предустановленные system-prompt скиллы
+├── strategies/
+│   ├── SlidingWindowStrategy.ts # Последние N сообщений
+│   ├── StickyFactsStrategy.ts   # Важные факты + sliding window
+│   └── BranchingStrategy.ts     # Ветки диалога с чекпоинтами
+├── taskstate/
+│   ├── TaskStateMachine.ts      # FSM: PLANNING → EXECUTION → VALIDATION → DONE
+│   └── types.ts                 # TaskState enum
+├── invariants/
+│   ├── InvariantStorage.ts      # Загрузка .invariants/default.json
+│   ├── InvariantValidator.ts    # LLM-валидация ответов
+│   ├── InvariantInjector.ts     # Форматирование в system prompt
+│   └── InvariantManager.ts      # Координатор
+├── mcp/
+│   ├── client.ts                # MCPClientManager: подключение к серверам
+│   ├── server-ai.ts             # Инструменты: summarize, classify, sentiment
+│   ├── server-files.ts          # Инструменты: saveToFile, readFile, listFiles
+│   ├── server-utils.ts          # Инструменты: get_time, git_status, weather, reminders
+│   ├── server-web.ts            # Инструменты: fetchUrl, searchWeb
+│   └── server-git.ts            # Инструменты: get_branch, list_files, get_diff
+├── rag/
+│   ├── RagManager.ts            # Координатор: index, search, compare
+│   ├── indexer.ts               # Сборка индекса из .md файлов + эмбеддинги
+│   ├── chunker.ts               # Разбивка на чанки: fixed / structural
+│   ├── embedder.ts              # Ollama embeddings (nomic-embed-text)
+│   ├── searcher.ts              # Косинусное сходство
+│   ├── reranker.ts              # Фильтрация по threshold
+│   ├── querier.ts               # ragQuery, ragQueryEnhanced, ragQueryCited
+│   └── types.ts                 # Chunk, SearchResult, RagConfig
+├── reminders/
+│   └── index.ts                 # Напоминания с таймером
+├── utils/
+│   └── tokens.ts                # Подсчёт токенов
+└── types/
+    └── index.ts                 # Общие TypeScript типы
 ```
 
 ---
 
-## Принципы инкапсуляции
+## Команды агента
 
-| Принцип | Реализация |
-|---------|-----------|
-| **Hiding Implementation** | Детали HTTP запросов скрыты в `sendMessage()` |
-| **Data Encapsulation** | История диалога в `private messages[]` |
-| **Single Responsibility** | Каждый класс отвечает за одну область |
-| **Separation of Concerns** | UI, бизнес-логика и API разделены |
+| Команда | Описание |
+|---------|----------|
+| `/model` | Переключение модели |
+| `/clear` | Очистка контекста |
+| `/compact` | Ручная суммаризация |
+| `/stats` | Метрики запросов |
+| `/resume` | Загрузка сессии |
+| `/task` | Task State Machine |
+| `/next` | Следующий этап задачи |
+| `/profile` | Управление профилями |
+| `/skills` | Активация скиллов |
+| `/strategy` | Переключение стратегии |
+| `/invariants` | Инварианты проекта |
+| `/mcp` | MCP инструменты |
+| `/rag` | RAG поиск по документации |
+| `/ask` | Developer assistant (RAG + git) |
+| `/remind` | Напоминания |
+| `/memory` | Просмотр памяти |
+| `/help` | Список всех команд |
 
 ---
 
 ## Поток данных
 
-### Полный цикл запроса:
-
 ```
-1. USER INPUT
-   └─> Chat.tsx (UI Layer)
-
-2. COMMAND PROCESSING
-   └─> handleCommand() - обработка команд
-   └─> OR conversation.addUserMessage()
-
-3. STATE MANAGEMENT
-   └─> Conversation.messages[] обновляется
-
-4. API CALL
-   └─> sendMessage() формирует HTTP запрос
-   └─> OpenRouter API обрабатывает
-   └─> Возвращает ApiResponse с метриками
-
-5. STATE UPDATE
-   └─> conversation.addAssistantMessage()
-   └─> sessionStats обновляется
-
-6. DISPLAY
-   └─> Chat.tsx рендерит результат
-   └─> Показывает метрики и статистику
+Пользователь → Chat.tsx
+  ├── Команда (/xxx) → handleCommand()
+  └── Обычное сообщение → conversation.addUserMessage()
+                           → sendMessage() → OpenRouter API
+                           → conversation.addAssistantMessage()
 ```
 
 ---
 
-## Типизация данных
+## RAG Pipeline
 
-**Файл:** `src/types/index.ts`
-
-Все взаимодействия типизированы:
-
-```typescript
-interface Message {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}
-
-interface ApiResponse {
-  content: string;
-  usage?: UsageInfo;
-  responseTime: number;
-}
-
-interface SessionStats {
-  totalTokens: number;
-  totalCost: number;
-  requestCount: number;
-}
 ```
-
-Это обеспечивает:
-- ✅ Type safety
-- ✅ Автодополнение в IDE
-- ✅ Раннее обнаружение ошибок
-
----
-
-## Расширяемость
-
-Благодаря модульной архитектуре легко добавить:
-
-### Новые источники LLM
-```typescript
-// Просто создать новый API клиент
-import { sendMessage as sendToAnthropic } from './api/anthropic.js';
-```
-
-### Новые типы агентов
-```typescript
-// Расширить Conversation для специализированных сценариев
-class RAGConversation extends Conversation {
-  private knowledge: VectorStore;
-  // ...
-}
-```
-
-### Новые команды
-```typescript
-// Добавить в Chat.tsx
-if (trimmed.startsWith('/export')) {
-  exportConversation(conversation.getHistory());
-}
+/rag index → for_rag/project-docs/ → chunker → embedder (Ollama) → rag-data/index-*.json
+/ask <вопрос> → ragManager.search() → top-3 chunks
+              + MCP get_branch/list_files
+              → system prompt с контекстом
+              → sendMessage() → ответ
 ```
 
 ---
 
-## Вывод
+## MCP Architecture
 
-Агент реализован как **полноценная система** с:
+Каждый MCP сервер — отдельный Node.js процесс, общение через stdio.
+`MCPClientManager` запускает все серверы при `/mcp connect` или `/ask`.
 
-1. ✅ **Отдельными сущностями** (классы с состоянием)
-2. ✅ **Инкапсуляцией** (скрытие деталей реализации)
-3. ✅ **Разделением ответственности** (каждый модуль отвечает за свою область)
-4. ✅ **Управлением состоянием** (история диалога, конфигурация)
-5. ✅ **Типизацией** (TypeScript интерфейсы)
-6. ✅ **Расширяемостью** (легко добавить новый функционал)
+Серверы:
+- `server-utils` — утилиты, git статус, погода, напоминания
+- `server-files` — работа с файлами в `output/`
+- `server-ai` — AI операции: суммаризация, классификация
+- `server-web` — веб-запросы
+- `server-git` — git контекст: ветка, структура, diff (используется `/ask`)
 
-Это **НЕ** просто обертка над fetch API, а **настоящий AI агент** с продуманной архитектурой.
+---
+
+## Task State Machine
+
+```
+PLANNING 🟡 → EXECUTION 🔵 → VALIDATION 🟠 → DONE 🟢
+                   ↑                ↓
+                   └──── (issues) ──┘
+```
+
+Состояния управляются командами `/task new`, `/task load`, `/next`.
+
+---
+
+## Система памяти
+
+Три слоя:
+- **Short-term** — текущая сессия (`.memory/short-term/`)
+- **Working** — рабочий контекст задачи
+- **Long-term** — накопленные знания (`.memory/long-term/`)
+
+Профили хранятся в `.memory/profiles/`.
