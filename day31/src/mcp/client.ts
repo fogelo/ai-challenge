@@ -34,6 +34,7 @@ export class MCPClientManager {
     { name: 'server-ai',    file: 'server-ai.js' },
     { name: 'server-files', file: 'server-files.js' },
     { name: 'server-utils', file: 'server-utils.js' },
+    { name: 'server-git',   file: 'server-git.js' },
   ];
 
   // Инструменты, скрытые от LLM (используются только внутренним кодом)
