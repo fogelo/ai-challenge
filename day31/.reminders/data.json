@@ -1,0 +1,11 @@
+{
+  "reminders": [
+    {
+      "id": "02a40c8a-0987-4f9d-ba99-68ada01643f9",
+      "text": "выпить воды",
+      "createdAt": "2026-03-11T22:27:10.865Z",
+      "scheduledAt": "2026-03-11T22:28:10.865Z",
+      "status": "shown"
+    }
+  ]
+}
