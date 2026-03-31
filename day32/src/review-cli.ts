@@ -72,6 +72,7 @@ async function postGithubComment(body: string): Promise<void> {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
     },
     body: JSON.stringify({ body }),
   });
