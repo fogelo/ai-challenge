@@ -24,6 +24,8 @@ export function parseDiff(rawDiff: string): ParsedDiff {
       if (!fileDiffsMap.has(currentFile)) {
         fileDiffsMap.set(currentFile, []);
       }
+    } else if (line.startsWith('--- ') || line.startsWith('+++ ')) {
+      // skip old/new file header lines
     } else if (
       currentFile &&
       (line.startsWith('@@') ||

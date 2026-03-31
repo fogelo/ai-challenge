@@ -45,4 +45,10 @@ describe('parseDiff', () => {
     expect(result.fileDiffs).toEqual([]);
     expect(result.summary).toBe('no changes');
   });
+
+  it('does not include file header lines in hunks', () => {
+    const result = parseDiff(SAMPLE_DIFF);
+    expect(result.fileDiffs[0].hunks).not.toContain('--- a/');
+    expect(result.fileDiffs[0].hunks).not.toContain('+++ b/');
+  });
 });
