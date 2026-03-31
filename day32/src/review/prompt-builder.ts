@@ -34,15 +34,15 @@ export function buildReviewPrompt(
     .join('\n\n');
 
   const systemPrompt =
-    `You are an expert code reviewer. Analyze the provided git diff and return a JSON object with exactly these keys:\n` +
-    `- "bugs": array of strings describing potential bugs or runtime errors\n` +
-    `- "architectural_issues": array of strings describing design or architecture problems\n` +
-    `- "recommendations": array of strings with improvement suggestions\n\n` +
-    `Return ONLY valid JSON, no markdown fences, no extra text.\n\n` +
-    `Project documentation context:\n${ragContext}`;
+    `Ты — эксперт по ревью кода. Проанализируй предоставленный git diff и верни JSON объект со следующими ключами:\n` +
+    `- "bugs": массив строк с описанием потенциальных багов или ошибок времени выполнения\n` +
+    `- "architectural_issues": массив строк с описанием архитектурных или дизайн-проблем\n` +
+    `- "recommendations": массив строк с рекомендациями по улучшению\n\n` +
+    `Верни ТОЛЬКО валидный JSON, без markdown-оберток и лишнего текста. Все строки в массивах — на русском языке.\n\n` +
+    `Контекст документации проекта:\n${ragContext}`;
 
   const userPrompt =
-    `Review this pull request.\n\n` +
+    `Сделай ревью этого pull request.\n\n` +
     `## Changed Files (full content)\n${fileSection}\n\n` +
     `## Diff\n${diffSection}`;
 
