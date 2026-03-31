@@ -1,0 +1,47 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: day32/package-lock.json
+
+      - name: Install dependencies
+        working-directory: day32
+        run: npm ci
+
+      - name: Build
+        working-directory: day32
+        run: npm run build
+
+      - name: Generate diff
+        working-directory: day32
+        run: git diff origin/${{ github.base_ref }}...HEAD > diff.patch
+
+      - name: Run AI code review
+        working-directory: day32
+        run: node dist/review-cli.js --diff diff.patch --repo .
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          REVIEW_MODEL: openai/gpt-4o-mini
