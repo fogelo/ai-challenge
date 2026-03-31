@@ -26,13 +26,12 @@ export class CodeReviewer {
     }
 
     const fileContents = new Map<string, string>();
-    for (const filePath of parsed.files) {
-      try {
-        const content = await readFile(join(repoPath, filePath), 'utf-8');
-        fileContents.set(filePath, content);
-      } catch {
-        fileContents.set(filePath, '(could not read file)');
-      }
+    const readResults = await Promise.allSettled(
+      parsed.files.map((fp) => readFile(join(repoPath, fp), 'utf-8')),
+    );
+    for (const [i, result] of readResults.entries()) {
+      const fp = parsed.files[i];
+      fileContents.set(fp, result.status === 'fulfilled' ? result.value : '(could not read file)');
     }
 
     let ragResults: SearchResult[] = [];
@@ -62,10 +61,8 @@ export class CodeReviewer {
 
   private parseReviewResult(raw: string): ReviewResult {
     try {
-      const cleaned = raw
-        .replace(/^```(?:json)?\n?/m, '')
-        .replace(/\n?```$/m, '')
-        .trim();
+      const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+      const cleaned = (fenceMatch ? fenceMatch[1] : raw).trim();
       const parsed = JSON.parse(cleaned) as ReviewResult;
       return {
         bugs: Array.isArray(parsed.bugs) ? parsed.bugs : [],
