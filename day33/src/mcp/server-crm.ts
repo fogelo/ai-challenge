@@ -97,4 +97,7 @@ server.registerTool(
 );
 
 const transport = new StdioServerTransport();
-(async () => { await server.connect(transport); })();
+(async () => { await server.connect(transport); })().catch((err) => {
+  process.stderr.write(`server-crm: failed to connect: ${err}\n`);
+  process.exit(1);
+});
