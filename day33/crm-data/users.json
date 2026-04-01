@@ -1,0 +1,8 @@
+[
+  { "id": "1", "name": "Иван Петров", "plan": "Pro", "status": "active", "registered": "2024-03-15", "email": "ivan@example.com" },
+  { "id": "2", "name": "Мария Сидорова", "plan": "Free", "status": "active", "registered": "2024-11-01", "email": "maria@example.com" },
+  { "id": "3", "name": "Алексей Козлов", "plan": "Pro", "status": "suspended", "registered": "2023-07-22", "email": "alex@example.com" },
+  { "id": "4", "name": "Елена Новикова", "plan": "Enterprise", "status": "active", "registered": "2022-05-10", "email": "elena@corp.com" },
+  { "id": "5", "name": "Дмитрий Фёдоров", "plan": "Free", "status": "active", "registered": "2025-01-08", "email": "dmitry@example.com" },
+  { "id": "6", "name": "Ольга Морозова", "plan": "Pro", "status": "active", "registered": "2024-09-30", "email": "olga@example.com" }
+]
