@@ -1479,7 +1479,7 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     }
 
     // /support command — режим поддержки пользователей
-    if (trimmed.startsWith('/support')) {
+    if (trimmed === '/support' || trimmed.startsWith('/support ')) {
       const arg = trimmed.slice('/support'.length).trim();
 
       if (arg === 'off') {
@@ -2354,7 +2354,10 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             }
           }
 
-          const baseWithRag = supportRagContext ? (systemPrompt || '') + supportRagContext : systemPrompt;
+          const supportUserContext = supportUserId
+            ? `\n\nТекущий пользователь ID: ${supportUserId}. При ответе используй crm_get_user("${supportUserId}") и crm_get_user_tickets("${supportUserId}").`
+            : '';
+          const baseWithRag = (systemPrompt || '') + supportUserContext + supportRagContext;
           // Если MCP подключён — добавить подсказку в system prompt чтобы LLM
           // использовал инструменты напрямую для фактических запросов,
           // не ожидая прохождения через цикл планирования
