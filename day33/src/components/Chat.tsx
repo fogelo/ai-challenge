@@ -258,6 +258,16 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
     chunkSize: 500,
     chunkOverlap: 100,
   }));
+  const [supportUserId, setSupportUserId] = useState<string | null>(null);
+  const [supportRagManager] = useState(() => new RagManager({
+    sourcePath: path.resolve('for_rag/support'),
+    outputPath: path.resolve('rag-data/support'),
+    embeddingModel: 'nomic-embed-text',
+    ollamaUrl: 'http://localhost:11434',
+    topK: 3,
+    chunkSize: 500,
+    chunkOverlap: 100,
+  }));
   const [activeMcpTool, setActiveMcpTool] = useState<string | null>(null);
   interface ToolCallLog {
     serverName: string;
@@ -1468,6 +1478,50 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
       return true;
     }
 
+    // /support command — режим поддержки пользователей
+    if (trimmed.startsWith('/support')) {
+      const arg = trimmed.slice('/support'.length).trim();
+
+      if (arg === 'off') {
+        setSupportUserId(null);
+        setActiveSkills((prev) => prev.filter((s) => s !== 'support'));
+        setNotification('🔕 Режим поддержки выключен');
+        return true;
+      }
+
+      if (arg === 'index') {
+        setIsLoading(true);
+        try {
+          await supportRagManager.index();
+          setNotification('✅ Индекс поддержки построен. Теперь можно использовать /support <user_id>');
+        } catch (err) {
+          setNotification(`❌ Ошибка индексации: ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+          setIsLoading(false);
+        }
+        return true;
+      }
+
+      if (!arg) {
+        setNotification(
+          'Использование:\n' +
+          '  /support <user_id>   — включить режим поддержки для пользователя\n' +
+          '  /support off         — выключить режим поддержки\n' +
+          '  /support index       — проиндексировать FAQ и документацию\n' +
+          'Пример: /support 1'
+        );
+        return true;
+      }
+
+      // /support <user_id>
+      setSupportUserId(arg);
+      setActiveSkills((prev) =>
+        prev.includes('support' as SkillName) ? prev : [...prev, 'support' as SkillName]
+      );
+      setNotification(`🎧 Режим поддержки: user #${arg}\nMCP: crm_get_user и crm_get_user_tickets доступны.\nДля выхода: /support off`);
+      return true;
+    }
+
     // Review command
     if (trimmed.startsWith('/review')) {
       const args = trimmed.slice('/review'.length).trim();
@@ -2286,12 +2340,27 @@ export const Chat: React.FC<ChatProps> = ({ modelRegistry, configManager }) => {
             ? await mcpManager.listTools()
             : [];
 
+          // Инжект RAG-контекста поддержки если активен режим /support
+          let supportRagContext = '';
+          if (supportUserId) {
+            try {
+              const supportResults = await supportRagManager.search(userInput, 'structural', 4);
+              if (supportResults.length > 0) {
+                supportRagContext = '\n\n=== ДОКУМЕНТАЦИЯ TASKFLOW ===\n' +
+                  supportResults.map((r) => r.chunk.text).join('\n---\n');
+              }
+            } catch {
+              // Индекс не построен — пропускаем RAG, MCP-контекст всё равно доступен
+            }
+          }
+
+          const baseWithRag = supportRagContext ? (systemPrompt || '') + supportRagContext : systemPrompt;
           // Если MCP подключён — добавить подсказку в system prompt чтобы LLM
           // использовал инструменты напрямую для фактических запросов,
           // не ожидая прохождения через цикл планирования
           const finalSystemPrompt = mcpTools.length > 0
-            ? (systemPrompt || '') + `\n\n=== MCP ИНСТРУМЕНТЫ ===\nДоступны инструменты: ${mcpTools.map(t => t.name).join(', ')}.\nДля простых информационных вопросов (время, данные, факты) — используй инструменты СРАЗУ, без планирования и уточняющих вопросов.`
-            : systemPrompt;
+            ? (baseWithRag || '') + `\n\n=== MCP ИНСТРУМЕНТЫ ===\nДоступны инструменты: ${mcpTools.map(t => t.name).join(', ')}.\nДля простых информационных вопросов (время, данные, факты) — используй инструменты СРАЗУ, без планирования и уточняющих вопросов.`
+            : baseWithRag;
 
           // Tool-calling loop: повторять пока LLM не вернёт финальный текстовый ответ
           // loopMessages — локальная копия, ходы с инструментами НЕ сохраняются в историю разговора
