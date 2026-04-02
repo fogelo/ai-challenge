@@ -164,5 +164,80 @@ server.registerTool(
   }
 );
 
+server.registerTool(
+  'writeProjectFile',
+  {
+    description: 'Создаёт или перезаписывает файл в проекте. Путь относительный от PROJECT_ROOT.',
+    inputSchema: {
+      path: z.string().describe('Относительный путь к файлу (например: output/CHANGELOG.md)'),
+      content: z.string().describe('Содержимое файла'),
+    },
+  },
+  async ({ path: relPath, content }) => {
+    try {
+      const abs = safePath(relPath);
+      const dir = abs.substring(0, abs.lastIndexOf('/'));
+      await mkdir(dir, { recursive: true });
+      await writeFile(abs, content, 'utf-8');
+      return { content: [{ type: 'text', text: `✅ Файл сохранён: ${relPath}` }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
+    }
+  }
+);
+
+server.registerTool(
+  'generateDiff',
+  {
+    description: 'Генерирует unified diff между старым и новым содержимым файла',
+    inputSchema: {
+      filename: z.string().describe('Имя файла (только для заголовка diff)'),
+      oldContent: z.string().describe('Старое содержимое'),
+      newContent: z.string().describe('Новое содержимое'),
+    },
+  },
+  async ({ filename, oldContent, newContent }) => {
+    try {
+      const oldLines = oldContent.split('\n');
+      const newLines = newContent.split('\n');
+
+      if (oldContent === newContent) {
+        return { content: [{ type: 'text', text: '(нет изменений)' }] };
+      }
+
+      // Simple line-by-line diff output
+      const diff: string[] = [`--- a/${filename}`, `+++ b/${filename}`];
+      const maxLen = Math.max(oldLines.length, newLines.length);
+      let hunkStart = -1;
+      const hunkLines: string[] = [];
+
+      for (let i = 0; i < maxLen; i++) {
+        const o = oldLines[i] ?? '';
+        const n = newLines[i] ?? '';
+        if (o !== n) {
+          if (hunkStart === -1) hunkStart = i;
+          if (o) hunkLines.push(`-${o}`);
+          if (n) hunkLines.push(`+${n}`);
+        } else {
+          if (hunkLines.length > 0) {
+            diff.push(`@@ -${hunkStart + 1} +${hunkStart + 1} @@`);
+            diff.push(...hunkLines);
+            hunkLines.length = 0;
+            hunkStart = -1;
+          }
+        }
+      }
+      if (hunkLines.length > 0) {
+        diff.push(`@@ -${hunkStart + 1} +${hunkStart + 1} @@`);
+        diff.push(...hunkLines);
+      }
+
+      return { content: [{ type: 'text', text: diff.join('\n') }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
+    }
+  }
+);
+
 const transport = new StdioServerTransport();
 (async () => { await server.connect(transport); })();
