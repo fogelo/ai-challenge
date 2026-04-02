@@ -4,7 +4,8 @@ import { InvariantSet, InvariantCategory } from './types.js';
 
 export class InvariantInjector {
   formatForPrompt(invariants: InvariantSet): string | null {
-    const categories = Object.entries(invariants.invariants);
+    const categories = Object.entries(invariants.invariants)
+      .filter(([, data]) => data.rules.length > 0);
 
     if (categories.length === 0) {
       return null;
