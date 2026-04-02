@@ -2,7 +2,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { readFile, readdir, writeFile, mkdir } from 'fs/promises';
+import { readFile, readdir, writeFile, mkdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, resolve, relative, extname } from 'path';
 
@@ -41,6 +41,10 @@ server.registerTool(
       if (BINARY_EXTENSIONS.has(extname(relPath).toLowerCase())) {
         return { content: [{ type: 'text', text: `⚠️ Бинарный файл: ${relPath} (чтение недоступно)` }] };
       }
+      const { size } = await stat(abs);
+      if (size > 10 * 1024 * 1024) {
+        return { content: [{ type: 'text', text: `⚠️ Файл слишком большой (${size} байт), чтение недоступно` }] };
+      }
       const content = await readFile(abs, 'utf-8');
       return { content: [{ type: 'text', text: content }] };
     } catch (err) {
@@ -70,7 +74,7 @@ async function globFiles(dir: string, pattern: string): Promise<string[]> {
       // leaf segment — match files
       let entries: import('fs').Dirent[];
       try { entries = await readdir(current, { withFileTypes: true }); } catch { return; }
-      const regex = new RegExp('^' + head.replace(/\./g, '\\.').replace(/\*/g, '[^/]*') + '$');
+      const regex = new RegExp('^' + head.replace(/\./g, '\\.').replace(/\?/g, '\\?').replace(/\*/g, '[^/]*') + '$');
       for (const e of entries) {
         if (e.isFile() && regex.test(e.name as string)) {
           results.push(relative(PROJECT_ROOT, join(current, e.name as string)));
@@ -79,6 +83,7 @@ async function globFiles(dir: string, pattern: string): Promise<string[]> {
     } else {
       // directory segment
       const next = join(current, head);
+      if (!next.startsWith(PROJECT_ROOT + '/') && next !== PROJECT_ROOT) return;
       if (existsSync(next)) await walk(next, rest);
     }
   }
