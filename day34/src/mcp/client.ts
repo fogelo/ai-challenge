@@ -30,12 +30,13 @@ export class MCPClientManager {
   private toolServerMap = new Map<string, string>(); // tool name → server name
 
   private static readonly SERVERS: ServerConfig[] = [
-    { name: 'server-web',   file: 'server-web.js' },
-    { name: 'server-ai',    file: 'server-ai.js' },
-    { name: 'server-files', file: 'server-files.js' },
-    { name: 'server-utils', file: 'server-utils.js' },
-    { name: 'server-git',   file: 'server-git.js' },
-    { name: 'server-crm',   file: 'server-crm.js' },
+    { name: 'server-web',     file: 'server-web.js' },
+    { name: 'server-ai',      file: 'server-ai.js' },
+    { name: 'server-files',   file: 'server-files.js' },
+    { name: 'server-utils',   file: 'server-utils.js' },
+    { name: 'server-git',     file: 'server-git.js' },
+    { name: 'server-crm',     file: 'server-crm.js' },
+    { name: 'server-project', file: 'server-project.js' },
   ];
 
   // Инструменты, скрытые от LLM (используются только внутренним кодом)
