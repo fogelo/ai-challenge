@@ -113,5 +113,48 @@ server.registerTool(
   }
 );
 
+server.registerTool(
+  'searchInFiles',
+  {
+    description: 'Ищет паттерн (регулярное выражение) в файлах проекта. Возвращает файл:строка:совпадение.',
+    inputSchema: {
+      pattern: z.string().describe('Регулярное выражение для поиска (например: callTool|readFile)'),
+      glob: z.string().describe('Glob-паттерн файлов для поиска (например: src/**/*.ts)'),
+      maxResults: z.number().optional().describe('Максимальное количество совпадений (по умолчанию 50)'),
+    },
+  },
+  async ({ pattern, glob, maxResults = 50 }) => {
+    try {
+      const files = await globFiles(PROJECT_ROOT, glob);
+      const regex = new RegExp(pattern, 'g');
+      const matches: string[] = [];
+
+      for (const relFile of files) {
+        if (matches.length >= maxResults) break;
+        if (BINARY_EXTENSIONS.has(extname(relFile).toLowerCase())) continue;
+        const abs = safePath(relFile);
+        let content: string;
+        try { content = await readFile(abs, 'utf-8'); } catch { continue; }
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          if (matches.length >= maxResults) break;
+          regex.lastIndex = 0;
+          if (regex.test(lines[i])) {
+            matches.push(`${relFile}:${i + 1}: ${lines[i].trim()}`);
+          }
+        }
+      }
+
+      if (matches.length === 0) {
+        return { content: [{ type: 'text', text: `Совпадений не найдено для: ${pattern}` }] };
+      }
+      const header = `Найдено ${matches.length} совпадений для "${pattern}":\n\n`;
+      return { content: [{ type: 'text', text: header + matches.join('\n') }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Ошибка: ${err instanceof Error ? err.message : String(err)}` }] };
+    }
+  }
+);
+
 const transport = new StdioServerTransport();
 (async () => { await server.connect(transport); })();
