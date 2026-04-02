@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { readFile, readdir, writeFile, mkdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join, resolve, relative, extname } from 'path';
+import { join, resolve, relative, extname, dirname } from 'path';
 
 const server = new McpServer({ name: 'server-project', version: '1.0.0' });
 
@@ -170,13 +170,13 @@ server.registerTool(
     description: 'Создаёт или перезаписывает файл в проекте. Путь относительный от PROJECT_ROOT.',
     inputSchema: {
       path: z.string().describe('Относительный путь к файлу (например: output/CHANGELOG.md)'),
-      content: z.string().describe('Содержимое файла'),
+      content: z.string().max(1 * 1024 * 1024).describe('Содержимое файла (максимум 1 МБ)'),
     },
   },
   async ({ path: relPath, content }) => {
     try {
       const abs = safePath(relPath);
-      const dir = abs.substring(0, abs.lastIndexOf('/'));
+      const dir = dirname(abs);
       await mkdir(dir, { recursive: true });
       await writeFile(abs, content, 'utf-8');
       return { content: [{ type: 'text', text: `✅ Файл сохранён: ${relPath}` }] };
@@ -192,8 +192,8 @@ server.registerTool(
     description: 'Генерирует unified diff между старым и новым содержимым файла',
     inputSchema: {
       filename: z.string().describe('Имя файла (только для заголовка diff)'),
-      oldContent: z.string().describe('Старое содержимое'),
-      newContent: z.string().describe('Новое содержимое'),
+      oldContent: z.string().max(512 * 1024).describe('Старое содержимое'),
+      newContent: z.string().max(512 * 1024).describe('Новое содержимое'),
     },
   },
   async ({ filename, oldContent, newContent }) => {
@@ -210,25 +210,31 @@ server.registerTool(
       const maxLen = Math.max(oldLines.length, newLines.length);
       let hunkStart = -1;
       const hunkLines: string[] = [];
+      let oldCount = 0;
+      let newCount = 0;
 
       for (let i = 0; i < maxLen; i++) {
         const o = oldLines[i] ?? '';
         const n = newLines[i] ?? '';
         if (o !== n) {
           if (hunkStart === -1) hunkStart = i;
-          if (o) hunkLines.push(`-${o}`);
-          if (n) hunkLines.push(`+${n}`);
+          hunkLines.push(`-${o}`);
+          oldCount++;
+          hunkLines.push(`+${n}`);
+          newCount++;
         } else {
           if (hunkLines.length > 0) {
-            diff.push(`@@ -${hunkStart + 1} +${hunkStart + 1} @@`);
+            diff.push(`@@ -${hunkStart + 1},${oldCount} +${hunkStart + 1},${newCount} @@`);
             diff.push(...hunkLines);
             hunkLines.length = 0;
             hunkStart = -1;
+            oldCount = 0;
+            newCount = 0;
           }
         }
       }
       if (hunkLines.length > 0) {
-        diff.push(`@@ -${hunkStart + 1} +${hunkStart + 1} @@`);
+        diff.push(`@@ -${hunkStart + 1},${oldCount} +${hunkStart + 1},${newCount} @@`);
         diff.push(...hunkLines);
       }
 
