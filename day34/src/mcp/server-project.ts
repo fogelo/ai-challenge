@@ -118,15 +118,20 @@ server.registerTool(
   {
     description: 'Ищет паттерн (регулярное выражение) в файлах проекта. Возвращает файл:строка:совпадение.',
     inputSchema: {
-      pattern: z.string().describe('Регулярное выражение для поиска (например: callTool|readFile)'),
+      pattern: z.string().max(200).describe('Регулярное выражение для поиска (например: callTool|readFile)'),
       glob: z.string().describe('Glob-паттерн файлов для поиска (например: src/**/*.ts)'),
-      maxResults: z.number().optional().describe('Максимальное количество совпадений (по умолчанию 50)'),
+      maxResults: z.number().int().min(1).max(500).optional().describe('Максимальное количество совпадений (по умолчанию 50, максимум 500)'),
     },
   },
   async ({ pattern, glob, maxResults = 50 }) => {
     try {
       const files = await globFiles(PROJECT_ROOT, glob);
-      const regex = new RegExp(pattern, 'g');
+      let regex: RegExp;
+      try {
+        regex = new RegExp(pattern);
+      } catch {
+        return { content: [{ type: 'text', text: `❌ Некорректное регулярное выражение: ${pattern}` }] };
+      }
       const matches: string[] = [];
 
       for (const relFile of files) {
@@ -134,13 +139,16 @@ server.registerTool(
         if (BINARY_EXTENSIONS.has(extname(relFile).toLowerCase())) continue;
         const abs = safePath(relFile);
         let content: string;
-        try { content = await readFile(abs, 'utf-8'); } catch { continue; }
+        try {
+          const { size } = await stat(abs);
+          if (size > 5 * 1024 * 1024) continue;
+          content = await readFile(abs, 'utf-8');
+        } catch { continue; }
         const lines = content.split('\n');
         for (let i = 0; i < lines.length; i++) {
           if (matches.length >= maxResults) break;
-          regex.lastIndex = 0;
           if (regex.test(lines[i])) {
-            matches.push(`${relFile}:${i + 1}: ${lines[i].trim()}`);
+            matches.push(`${relFile}:${i + 1}: ${lines[i].trimEnd()}`);
           }
         }
       }
